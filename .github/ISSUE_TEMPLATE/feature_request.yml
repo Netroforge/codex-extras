@@ -1,0 +1,47 @@
+name: Feature request
+description: Suggest a focused Codex workflow improvement.
+title: "feature: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Codex Extras aims to stay small and composable. Describe the workflow problem before proposing a particular implementation.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Workflow problem
+      description: What is difficult, repetitive, or unavailable today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed improvement
+      description: Explain the interaction you would like Codex Extras to provide.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add mockups, examples, or related command IDs if available.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues and proposals for duplicates.
+          required: true
+        - label: This proposal extends the official Codex extension without impersonating or replacing it.
+          required: true
