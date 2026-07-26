@@ -10,4 +10,5 @@ SECURITY.md
 assets/icon-source.png
 assets/icon-prompt.md
 package-lock.json
+test/**
 *.vsix

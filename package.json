@@ -2,13 +2,14 @@
   "name": "codex-extras",
   "displayName": "Codex Extras",
   "description": "Convenient toolbar actions and workflow enhancements for Codex in Visual Studio Code.",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "publisher": "netroforge",
   "license": "MIT",
   "icon": "assets/icon.png",
   "main": "./extension.js",
   "activationEvents": [
-    "onCommand:codexExtras.newCodexAgent"
+    "onCommand:codexExtras.newCodexAgent",
+    "onView:codexExtras.chatHistory"
   ],
   "engines": {
     "vscode": "^1.96.2"
@@ -62,6 +63,48 @@
           "light": "assets/toolbar-light.svg",
           "dark": "assets/toolbar-dark.svg"
         }
+      },
+      {
+        "command": "codexExtras.newChat",
+        "title": "New Chat",
+        "category": "Codex Extras",
+        "icon": "$(add)"
+      },
+      {
+        "command": "codexExtras.openChat",
+        "title": "Open Chat",
+        "category": "Codex Extras",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "codexExtras.refreshChats",
+        "title": "Refresh Chats",
+        "category": "Codex Extras",
+        "icon": "$(refresh)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "codexExtrasChatsContainer",
+          "title": "Codex Chats",
+          "icon": "assets/sidebar.svg"
+        }
+      ]
+    },
+    "views": {
+      "codexExtrasChatsContainer": [
+        {
+          "id": "codexExtras.chatHistory",
+          "name": "Codex Chats",
+          "contextualTitle": "Codex Chats"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "codexExtras.chatHistory",
+        "contents": "No local Codex chats yet.\n[Start a new chat](command:codexExtras.newChat)"
       }
     ],
     "configuration": {
@@ -82,9 +125,32 @@
           "when": "config.codexExtras.showNewAgentButton"
         }
       ],
+      "view/title": [
+        {
+          "command": "codexExtras.newChat",
+          "group": "navigation@1",
+          "when": "view == codexExtras.chatHistory"
+        },
+        {
+          "command": "codexExtras.refreshChats",
+          "group": "navigation@2",
+          "when": "view == codexExtras.chatHistory"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "codexExtras.openChat",
+          "group": "inline",
+          "when": "view == codexExtras.chatHistory && viewItem == codexChat"
+        }
+      ],
       "commandPalette": [
         {
           "command": "codexExtras.newCodexAgent",
+          "when": "false"
+        },
+        {
+          "command": "codexExtras.openChat",
           "when": "false"
         }
       ]
@@ -92,7 +158,7 @@
   },
   "scripts": {
     "check": "node scripts/validate.mjs",
-    "test": "npm run check",
+    "test": "npm run check && node --test",
     "package": "vsce package --no-dependencies",
     "publish:marketplace": "vsce publish --no-dependencies"
   },
