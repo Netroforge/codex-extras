@@ -2,7 +2,7 @@
   "name": "codex-extras",
   "displayName": "Codex Extras",
   "description": "Convenient toolbar actions and workflow enhancements for Codex in Visual Studio Code.",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "publisher": "netroforge",
   "license": "MIT",
   "icon": "assets/icon.png",

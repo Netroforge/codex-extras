@@ -42,7 +42,7 @@ For an unpublished development build:
 ```sh
 npm ci
 npm run package
-code --install-extension codex-extras-0.1.0.vsix
+code --install-extension codex-extras-1.0.0.vsix
 ```
 
 ## Privacy

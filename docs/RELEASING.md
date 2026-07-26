@@ -29,8 +29,8 @@ Never commit or paste the token into an issue, pull request, workflow file, or b
 5. Tag the exact version and push it:
 
    ```sh
-   git tag v0.1.0
-   git push origin v0.1.0
+   git tag v1.0.0
+   git push origin v1.0.0
    ```
 
 The release workflow verifies that the tag matches `package.json`, packages the VSIX, publishes it to the Visual Studio Marketplace, and creates a GitHub release containing the same VSIX.
