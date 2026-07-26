@@ -2,6 +2,15 @@
 
 All notable changes to Codex Extras are documented in this file.
 
+## 1.1.0
+
+- Add a Codex Chats Activity Bar panel with local chat history, automatic
+  refresh, and pinned editor-tab opening.
+- Show current-workspace chats first, separate chats from other workspaces, and
+  use a new geometric Activity Bar icon.
+- Open a distinct empty Codex agent when the toolbar button is selected while
+  another empty agent is already open.
+
 ## 1.0.1
 
 - Add an original code-brackets-and-plus icon for the New Codex Agent toolbar button.
