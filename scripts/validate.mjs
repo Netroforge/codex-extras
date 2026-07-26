@@ -15,10 +15,24 @@ assert.match(manifest.version, /^\d+\.\d+\.\d+$/);
 assert.equal(manifest.license, "MIT");
 assert.equal(manifest.repository.url, "https://github.com/netroforge/codex-extras.git");
 assert.ok(manifest.extensionDependencies.includes("openai.chatgpt"));
+assert.equal(manifest.main, "./extension.js");
+assert.ok(
+  manifest.activationEvents.includes("onCommand:codexExtras.newCodexAgent"),
+);
+
+const newAgentCommand = manifest.contributes?.commands?.find(
+  ({ command }) => command === "codexExtras.newCodexAgent",
+);
+
+assert.ok(newAgentCommand, "New Codex Agent command contribution is missing");
+assert.deepEqual(newAgentCommand.icon, {
+  light: "assets/toolbar-light.svg",
+  dark: "assets/toolbar-dark.svg",
+});
 
 const editorTitleItems = manifest.contributes?.menus?.["editor/title"] ?? [];
 const newAgentButton = editorTitleItems.find(
-  ({ command }) => command === "chatgpt.newCodexPanel",
+  ({ command }) => command === "codexExtras.newCodexAgent",
 );
 
 assert.ok(newAgentButton, "New Codex Agent toolbar contribution is missing");
@@ -37,6 +51,41 @@ assert.equal(
   ].default,
   true,
 );
+
+const commandPaletteItems =
+  manifest.contributes?.menus?.commandPalette ?? [];
+assert.ok(
+  commandPaletteItems.some(
+    ({ command, when }) =>
+      command === "codexExtras.newCodexAgent" && when === "false",
+  ),
+  "Wrapper command must stay hidden from the Command Palette",
+);
+
+const extensionSource = await readFile(
+  path.join(root, manifest.main),
+  "utf8",
+);
+assert.match(
+  extensionSource,
+  /registerCommand\(COMMAND_ID/,
+  "Extension must register its wrapper command",
+);
+assert.match(
+  extensionSource,
+  /executeCommand\(OFFICIAL_CODEX_COMMAND_ID\)/,
+  "Wrapper command must delegate to the official Codex command",
+);
+
+for (const [theme, iconPath] of Object.entries(newAgentCommand.icon)) {
+  const toolbarIcon = await readFile(path.join(root, iconPath), "utf8");
+  assert.match(toolbarIcon, /viewBox="0 0 16 16"/);
+  assert.match(toolbarIcon, /stroke-width="1\.5"/);
+  assert.match(
+    toolbarIcon,
+    theme === "light" ? /stroke="#424242"/ : /stroke="#C5C5C5"/,
+  );
+}
 
 const icon = await readFile(path.join(root, manifest.icon));
 assert.equal(icon.subarray(0, 8).toString("hex"), "89504e470d0a1a0a");

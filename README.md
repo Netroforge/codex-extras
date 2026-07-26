@@ -12,7 +12,7 @@ Small, focused workflow improvements for the official Codex extension in Visual 
 
 ### New Codex Agent toolbar button
 
-Adds a visible `+` action to the editor toolbar. Select it to execute the official Codex command `chatgpt.newCodexPanel` and open a new Codex agent.
+Adds a visible code-brackets-and-plus action to the editor toolbar. Select it to execute the official Codex command `chatgpt.newCodexPanel` and open a new Codex agent.
 
 The button is available without assigning a keyboard shortcut.
 
@@ -42,12 +42,12 @@ For an unpublished development build:
 ```sh
 npm ci
 npm run package
-code --install-extension codex-extras-1.0.0.vsix
+code --install-extension codex-extras-1.0.1.vsix
 ```
 
 ## Privacy
 
-Codex Extras contains no telemetry, network requests, or runtime code. It contributes a menu item that invokes a command provided by the official Codex extension.
+Codex Extras contains no telemetry or network requests. Its small runtime wrapper only delegates the toolbar action to a command provided by the official Codex extension.
 
 ## Contributing
 
