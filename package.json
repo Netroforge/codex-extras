@@ -1,0 +1,81 @@
+{
+  "name": "codex-extras",
+  "displayName": "Codex Extras",
+  "description": "Convenient toolbar actions and workflow enhancements for Codex in Visual Studio Code.",
+  "version": "0.1.0",
+  "publisher": "netroforge",
+  "license": "MIT",
+  "icon": "assets/icon.png",
+  "engines": {
+    "vscode": "^1.96.2"
+  },
+  "categories": [
+    "AI",
+    "Chat",
+    "Other"
+  ],
+  "keywords": [
+    "codex",
+    "openai",
+    "toolbar",
+    "agent",
+    "productivity",
+    "quick actions"
+  ],
+  "galleryBanner": {
+    "color": "#080b2d",
+    "theme": "dark"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/netroforge/codex-extras.git"
+  },
+  "bugs": {
+    "url": "https://github.com/netroforge/codex-extras/issues"
+  },
+  "homepage": "https://github.com/netroforge/codex-extras#readme",
+  "extensionKind": [
+    "ui"
+  ],
+  "extensionDependencies": [
+    "openai.chatgpt"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    },
+    "virtualWorkspaces": {
+      "supported": true
+    }
+  },
+  "contributes": {
+    "configuration": {
+      "title": "Codex Extras",
+      "properties": {
+        "codexExtras.showNewAgentButton": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the New Codex Agent button in the editor toolbar."
+        }
+      }
+    },
+    "menus": {
+      "editor/title": [
+        {
+          "command": "chatgpt.newCodexPanel",
+          "group": "navigation@100",
+          "when": "config.codexExtras.showNewAgentButton"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "check": "node scripts/validate.mjs",
+    "test": "npm run check",
+    "package": "vsce package --no-dependencies",
+    "publish:marketplace": "vsce publish --no-dependencies"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^3.6.2"
+  }
+}

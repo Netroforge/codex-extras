@@ -1,0 +1,13 @@
+.github/**
+.vscode/**
+docs/**
+scripts/**
+.editorconfig
+.gitignore
+.nvmrc
+CONTRIBUTING.md
+SECURITY.md
+assets/icon-source.png
+assets/icon-prompt.md
+package-lock.json
+*.vsix
