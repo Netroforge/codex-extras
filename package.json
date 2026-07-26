@@ -2,10 +2,14 @@
   "name": "codex-extras",
   "displayName": "Codex Extras",
   "description": "Convenient toolbar actions and workflow enhancements for Codex in Visual Studio Code.",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "publisher": "netroforge",
   "license": "MIT",
   "icon": "assets/icon.png",
+  "main": "./extension.js",
+  "activationEvents": [
+    "onCommand:codexExtras.newCodexAgent"
+  ],
   "engines": {
     "vscode": "^1.96.2"
   },
@@ -49,6 +53,17 @@
     }
   },
   "contributes": {
+    "commands": [
+      {
+        "command": "codexExtras.newCodexAgent",
+        "title": "New Codex Agent",
+        "category": "Codex Extras",
+        "icon": {
+          "light": "assets/toolbar-light.svg",
+          "dark": "assets/toolbar-dark.svg"
+        }
+      }
+    ],
     "configuration": {
       "title": "Codex Extras",
       "properties": {
@@ -62,9 +77,15 @@
     "menus": {
       "editor/title": [
         {
-          "command": "chatgpt.newCodexPanel",
+          "command": "codexExtras.newCodexAgent",
           "group": "navigation@100",
           "when": "config.codexExtras.showNewAgentButton"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "codexExtras.newCodexAgent",
+          "when": "false"
         }
       ]
     }

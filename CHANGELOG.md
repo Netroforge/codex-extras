@@ -2,6 +2,11 @@
 
 All notable changes to Codex Extras are documented in this file.
 
+## 1.0.1
+
+- Add an original code-brackets-and-plus icon for the New Codex Agent toolbar button.
+- Delegate the custom toolbar action to the official `chatgpt.newCodexPanel` command.
+
 ## 1.0.0
 
 - Initial stable release.
