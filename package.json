@@ -163,6 +163,6 @@
     "publish:marketplace": "vsce publish --no-dependencies"
   },
   "devDependencies": {
-    "@vscode/vsce": "^3.6.2"
+    "@vscode/vsce": "^4.0.0"
   }
 }
