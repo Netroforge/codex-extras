@@ -493,13 +493,16 @@ test("status icons are opt-in, update on live events, and toggle without reloadi
   for (const [state, icon, color] of [
     ["waiting", "bell", "charts.yellow"],
     ["question", "question", "charts.yellow"],
-    ["idle", "circle-outline", "descriptionForeground"],
   ]) {
     live.states.set(id, state);
     const chat = await item();
     assert.equal(chat.iconPath.id, icon);
     assert.equal(chat.iconPath.color.id, color);
   }
+  live.states.set(id, "idle");
+  const idle = await item();
+  assert.equal(idle.iconPath.light, path.resolve(__dirname, "..", "assets", "status-empty.svg"));
+  assert.match(idle.tooltip, /Idle \(live\)/);
   live.states.clear();
   live.onChange();
   assert.equal((await item()).iconPath.id, "clock", "losing live status removes spinner");
@@ -513,8 +516,9 @@ test("status icons are opt-in, update on live events, and toggle without reloadi
   assert.equal((await item()).iconPath.id, "error");
   assert.equal((await item()).iconPath.color.id, "errorForeground");
   await writeFile(filePath, "{}\n");
-  assert.equal((await item()).iconPath.id, "circle-slash");
-  assert.equal((await item()).iconPath.color.id, "descriptionForeground");
+  const unknown = await item();
+  assert.deepEqual(unknown.iconPath, idle.iconPath, "inactive states preserve the same empty icon slot");
+  assert.match(unknown.tooltip, /Status unknown/);
   harness.setStatusIcons(false);
   assert.ok(watcher.disposed);
   assert.ok(live.disposed);

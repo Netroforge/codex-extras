@@ -4,6 +4,8 @@ All notable changes to Codex Extras are documented in this file.
 
 ## Unreleased
 
+- Hide idle and unknown icons while preserving their space and tooltip status.
+
 - Fix false async-question indicators in migrated histories whose call IDs were
   replaced with `item-N`, and process follow-up messages within merged turns.
 

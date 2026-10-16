@@ -39,7 +39,7 @@ const SESSION_STATUSES = {
   working: { icon: "loading~spin", color: "charts.blue", label: "Working (live)" },
   waiting: { icon: "bell", color: "charts.yellow", label: "Waiting for input or approval (live)" },
   question: { icon: "question", color: "charts.yellow", label: "Unanswered non-blocking question (agent may still be working)" },
-  idle: { icon: "circle-outline", color: "descriptionForeground", label: "Idle (live)" },
+  idle: { label: "Idle (live)" },
   unconfirmed: { icon: "clock", color: "descriptionForeground", label: "Activity unconfirmed" },
   completed: { icon: "pass", color: "testing.iconPassed", label: "New result to review" },
   reviewed: { label: "Result reviewed" },
@@ -55,7 +55,7 @@ class CodexChatItem extends vscode.TreeItem {
     this.resultKey = session.status === "completed" ? session.resultKey : null;
     const status = session.showStatusIcons
       ? SESSION_STATUSES[session.status] ?? {
-        icon: "circle-slash", color: "descriptionForeground", label: "Status unknown",
+        label: "Status unknown",
       }
       : undefined;
     this.description = [session.workspaceName, formatUpdatedAt(session.updatedAt)]

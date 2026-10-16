@@ -54,11 +54,12 @@ Enable **Codex Extras: Show Session Status Icons** for a spinner while working,
 a green check mark for a new result to review, a stop icon for interrupted turns,
 or an error icon for failed turns. A yellow question mark means an unanswered
 non-blocking question; the agent may still be working. It disappears after all
-questions have matching replies. A gray slashed circle means status is unknown.
+questions have matching replies. Idle and unknown states leave the icon slot empty,
+preserving text alignment; their status remains available in the tooltip.
 Sending a new ordinary user message supersedes earlier questions, including
 older histories migrated into a single turn;
 interrupted or failed turns do not keep abandoned questions active.
-A bell means Codex is waiting for input or approval, and a hollow circle means idle.
+A bell means Codex is waiting for input or approval.
 A clock means activity is unconfirmed, not that the task has completed.
 Changing the setting takes effect immediately.
 
@@ -71,7 +72,7 @@ non-blocking questions, and unanswered questions take priority over other states
 
 Status icons use theme-aware colors: blue for working, green for new results,
 yellow for questions/waiting, orange for interrupted, red for failed, and muted foreground
-for idle or unknown/unconfirmed states. Shapes and tooltip labels also identify
+for unconfirmed activity. Shapes and tooltip labels also identify
 each state, so color is not the only cue.
 
 This optional mode reads at most the last 256 KiB of each local session log and
