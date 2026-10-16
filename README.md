@@ -57,6 +57,11 @@ A bell means Codex is waiting for input or approval, and a hollow circle means i
 A clock means activity is unconfirmed, not that the task has completed.
 Changing the setting takes effect immediately.
 
+Status icons use theme-aware colors: blue for working, green for completed,
+yellow for waiting, orange for interrupted, red for failed, and muted foreground
+for idle or unknown/unconfirmed states. Shapes and tooltip labels also identify
+each state, so color is not the only cue.
+
 This optional mode reads at most the last 256 KiB of each local session log and
 caches the result. Only explicit lifecycle events determine status; assistant
 messages and file modification times do not imply completion. File system events

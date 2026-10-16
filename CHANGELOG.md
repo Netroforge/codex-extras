@@ -4,6 +4,9 @@ All notable changes to Codex Extras are documented in this file.
 
 ## Unreleased
 
+- Apply consistent, theme-aware colors to status icons for working, completed,
+  waiting, interrupted, failed, and inactive/unknown states.
+
 - Add opt-in session status icons, using experimental local Codex IPC for live
   activity and bounded log reads for recorded results. Never infer running from
   unfinished logs; invalidate live activity on disconnection. Keep the original

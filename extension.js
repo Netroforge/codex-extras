@@ -31,13 +31,13 @@ let panelSequence = 0;
 let openQueue = Promise.resolve();
 
 const SESSION_STATUSES = {
-  working: { icon: "loading~spin", label: "Working (live)" },
-  waiting: { icon: "bell", label: "Waiting for input or approval (live)" },
-  idle: { icon: "circle-outline", label: "Idle (live)" },
-  unconfirmed: { icon: "clock", label: "Activity unconfirmed" },
-  completed: { icon: "pass", label: "Completed" },
-  interrupted: { icon: "debug-stop", label: "Interrupted" },
-  failed: { icon: "error", label: "Failed" },
+  working: { icon: "loading~spin", color: "charts.blue", label: "Working (live)" },
+  waiting: { icon: "bell", color: "charts.yellow", label: "Waiting for input or approval (live)" },
+  idle: { icon: "circle-outline", color: "descriptionForeground", label: "Idle (live)" },
+  unconfirmed: { icon: "clock", color: "descriptionForeground", label: "Activity unconfirmed" },
+  completed: { icon: "pass", color: "testing.iconPassed", label: "Completed" },
+  interrupted: { icon: "debug-stop", color: "charts.orange", label: "Interrupted" },
+  failed: { icon: "error", color: "errorForeground", label: "Failed" },
 };
 
 class CodexChatItem extends vscode.TreeItem {
@@ -46,7 +46,9 @@ class CodexChatItem extends vscode.TreeItem {
 
     this.id = session.id;
     const status = session.showStatusIcons
-      ? SESSION_STATUSES[session.status] ?? { icon: "question", label: "Status unknown" }
+      ? SESSION_STATUSES[session.status] ?? {
+        icon: "question", color: "descriptionForeground", label: "Status unknown",
+      }
       : undefined;
     this.description = [session.workspaceName, formatUpdatedAt(session.updatedAt)]
       .filter(Boolean)
@@ -64,7 +66,10 @@ class CodexChatItem extends vscode.TreeItem {
     ]
       .filter(Boolean)
       .join("\n");
-    this.iconPath = new vscode.ThemeIcon(status?.icon ?? "comment-discussion");
+    this.iconPath = new vscode.ThemeIcon(
+      status?.icon ?? "comment-discussion",
+      status ? new vscode.ThemeColor(status.color) : undefined,
+    );
     this.contextValue = "codexChat";
     this.command = {
       command: OPEN_CHAT_COMMAND_ID,

@@ -103,6 +103,12 @@ function createHarness(t, tabs = [], options = {}) {
     },
     EventEmitter,
     ThemeIcon: class ThemeIcon {
+      constructor(id, color) {
+        this.id = id;
+        this.color = color;
+      }
+    },
+    ThemeColor: class ThemeColor {
       constructor(id) {
         this.id = id;
       }
@@ -444,11 +450,13 @@ test("status icons are opt-in, update on live events, and toggle without reloadi
     return (await provider.getChildren(groups[0]))[0];
   };
   assert.equal((await item()).iconPath.id, "comment-discussion");
+  assert.equal((await item()).iconPath.color, undefined);
   assert.equal(reads, 0, "disabled mode must not read status logs");
   assert.equal(harness.fileWatchers.length, 2, "only archive watchers when disabled");
   assert.equal(harness.liveMonitors.length, 0, "no IPC connection when disabled");
   harness.setStatusIcons(true);
   assert.equal((await item()).iconPath.id, "pass");
+  assert.equal((await item()).iconPath.color.id, "testing.iconPassed");
   const watcher = harness.fileWatchers.at(-1);
   assert.equal(watcher.pattern.base, sessions);
   assert.equal(watcher.pattern.pattern, "**/*.jsonl");
@@ -467,18 +475,32 @@ test("status icons are opt-in, update on live events, and toggle without reloadi
   live.states.set(id, "working");
   live.onChange();
   assert.equal((await item()).iconPath.id, "loading~spin");
+  assert.equal((await item()).iconPath.color.id, "charts.blue");
   assert.match((await item()).accessibilityInformation.label, /Working/);
+  for (const [state, icon, color] of [
+    ["waiting", "bell", "charts.yellow"],
+    ["idle", "circle-outline", "descriptionForeground"],
+  ]) {
+    live.states.set(id, state);
+    const chat = await item();
+    assert.equal(chat.iconPath.id, icon);
+    assert.equal(chat.iconPath.color.id, color);
+  }
   live.states.clear();
   live.onChange();
   assert.equal((await item()).iconPath.id, "clock", "losing live status removes spinner");
+  assert.equal((await item()).iconPath.color.id, "descriptionForeground");
   previous = changes;
   await appendFile(filePath, lifecycle("turn_aborted"));
   await waitForRefresh(previous);
   assert.equal((await item()).iconPath.id, "debug-stop");
+  assert.equal((await item()).iconPath.color.id, "charts.orange");
   await appendFile(filePath, lifecycle("task_failed"));
   assert.equal((await item()).iconPath.id, "error");
+  assert.equal((await item()).iconPath.color.id, "errorForeground");
   await writeFile(filePath, "{}\n");
   assert.equal((await item()).iconPath.id, "question");
+  assert.equal((await item()).iconPath.color.id, "descriptionForeground");
   harness.setStatusIcons(false);
   assert.ok(watcher.disposed);
   assert.ok(live.disposed);
