@@ -4,6 +4,9 @@ All notable changes to Codex Extras are documented in this file.
 
 ## Unreleased
 
+- Fix false async-question indicators in migrated histories whose call IDs were
+  replaced with `item-N`, and process follow-up messages within merged turns.
+
 - Expire superseded async questions using actual conversation order, and discard
   questions from interrupted/failed turns instead of showing stale question marks.
 - Preserve label alignment with a transparent icon slot after a result is reviewed.

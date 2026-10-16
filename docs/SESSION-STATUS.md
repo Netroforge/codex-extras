@@ -50,7 +50,12 @@ messages carrying `<send_user_message_question_reply>` resolve those exact IDs.
 Inspect both `turns` and canonical `turnHistory.history.entitiesByKey`; deduplicate
 items and match replies independently of entity order. Retain only unresolved IDs.
 Use canonical island entry order (or recorded turn start times), not entity map
-insertion order, to expire old questions when a newer ordinary user turn starts.
+insertion order, to expire old questions when a newer ordinary user message appears.
+Process messages inside each turn in order as well: older migrated histories may
+combine several user follow-ups into a single turn. If rehydration replaced the
+original call ID with `item-N`, an answer may resolve it only through a unique,
+exact question-title/index match from a later reply in known conversation order.
+Stable call IDs never use this fallback, and ambiguous matches remain unresolved.
 A structured async reply resolves its IDs without superseding remaining questions.
 Questions in interrupted/failed turns are abandoned. If history order cannot be
 established, do not guess which prompt supersedes which question.

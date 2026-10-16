@@ -6,6 +6,7 @@ const REPLY_END = "</send_user_message_question_reply>";
 function itemQuestionIds(item) {
   const asked = [];
   const answered = [];
+  const replies = [];
   if (item?.type === "agentMessage" && typeof item.id === "string" && Array.isArray(item.questions)) {
     for (let index = 0; index < item.questions.length; index++) {
       asked.push(JSON.stringify(["request_user_input_async", item.id, index]));
@@ -13,25 +14,27 @@ function itemQuestionIds(item) {
   }
   if (item?.type === "userMessage" || item?.type === "steeringUserMessage") {
     const content = item.type === "userMessage" ? item.content : item.input;
-    if (!Array.isArray(content)) return { asked, answered };
+    if (!Array.isArray(content)) return { asked, answered, replies };
     const text = content.filter((part) => part?.type === "text")
       .map((part) => part.text ?? "").join("\n").trim();
-    if (!text.startsWith(REPLY_START) || !text.endsWith(REPLY_END)) return { asked, answered };
+    if (!text.startsWith(REPLY_START) || !text.endsWith(REPLY_END)) return { asked, answered, replies };
     try {
       const parsed = JSON.parse(text.slice(REPLY_START.length, -REPLY_END.length));
       for (const reply of Array.isArray(parsed) ? parsed : [parsed]) {
         if (typeof reply?.questionItemId !== "string") continue;
-        const id = JSON.parse(reply.questionItemId);
+        let id;
+        try { id = JSON.parse(reply.questionItemId); } catch { continue; }
         if (Array.isArray(id) && id.length === 3 && id[0] === "request_user_input_async" &&
             typeof id[1] === "string" && Number.isInteger(id[2]) && id[2] >= 0) {
           answered.push(JSON.stringify(id));
+          replies.push({ id: JSON.stringify(id), index: id[2], title: reply.question });
         }
       }
     } catch {
       // Unsupported or malformed reply markup cannot resolve a question.
     }
   }
-  return { asked, answered };
+  return { asked, answered, replies };
 }
 
 function orderedTurns(state) {
@@ -62,19 +65,44 @@ function isNewUserPrompt(item) {
 function pendingQuestionIds(state) {
   const asked = new Set();
   const answered = new Set();
+  const knownIds = new Set();
+  const legacy = new Map();
+  const replies = [];
+  let position = 0;
   const { turns, ordered } = orderedTurns(state);
   for (const turn of turns) {
     if (!Array.isArray(turn?.items)) continue;
-    if (ordered && turn.items.some(isNewUserPrompt)) asked.clear();
     for (const item of turn.items) {
+      position++;
+      if (ordered && isNewUserPrompt(item)) {
+        asked.clear();
+        legacy.clear();
+      }
       const ids = itemQuestionIds(item);
+      for (const id of ids.asked) knownIds.add(id);
       if (turn.status !== "interrupted" && turn.status !== "failed") {
         for (const id of ids.asked) asked.add(id);
+        if (/^item-\d+$/.test(item.id ?? "")) {
+          for (let index = 0; index < ids.asked.length; index++) {
+            legacy.set(ids.asked[index], { title: item.questions[index]?.title, index, position });
+          }
+        }
       }
       for (const id of ids.answered) answered.add(id);
+      for (const reply of ids.replies) replies.push({ ...reply, position });
     }
   }
   for (const id of answered) asked.delete(id);
+  if (ordered) {
+    for (const reply of replies) {
+      if (knownIds.has(reply.id) || typeof reply.title !== "string" || !reply.title) continue;
+      const candidates = [...legacy].filter(([id, question]) => asked.has(id) &&
+        question.position < reply.position && question.index === reply.index && question.title === reply.title);
+      // Legacy rehydration can replace a call ID with item-N. Use only a unique,
+      // exact question-title/index match; never fuzzy-match or inspect answers.
+      if (candidates.length === 1) asked.delete(candidates[0][0]);
+    }
+  }
   return asked;
 }
 

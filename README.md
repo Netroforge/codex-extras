@@ -55,7 +55,8 @@ a green check mark for a new result to review, a stop icon for interrupted turns
 or an error icon for failed turns. A yellow question mark means an unanswered
 non-blocking question; the agent may still be working. It disappears after all
 questions have matching replies. A gray slashed circle means status is unknown.
-Starting a new ordinary user turn supersedes questions from earlier turns;
+Sending a new ordinary user message supersedes earlier questions, including
+older histories migrated into a single turn;
 interrupted or failed turns do not keep abandoned questions active.
 A bell means Codex is waiting for input or approval, and a hollow circle means idle.
 A clock means activity is unconfirmed, not that the task has completed.

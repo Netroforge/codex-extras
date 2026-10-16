@@ -37,11 +37,12 @@ test("reconstructs canonical history regardless of entity order and duplicate it
   assert.equal(pendingQuestionIds(state).size, 0);
 });
 
-test("ordinary user text and assistant-quoted reply markup cannot resolve questions", () => {
+test("assistant-quoted markup and replies for other IDs cannot resolve questions", () => {
   const markup = reply([id("call-one", 0)]).input;
   assert.deepEqual(itemQuestionIds({ type: "agentMessage", content: markup }).answered, []);
-  const state = { turns: [{ items: [ask("call-one", 1),
+  const state = { turns: [{ items: [
     { type: "userMessage", content: [{ type: "text", text: "I answered elsewhere" }] },
+    ask("call-one", 1),
     { type: "userInputResponse", questions: [{ id: "blocking-question" }], completed: true },
     reply([id("different-call", 0)]), reply([id("call-one", 5)]),
   ] }] };
@@ -49,6 +50,25 @@ test("ordinary user text and assistant-quoted reply markup cannot resolve questi
   assert.deepEqual(itemQuestionIds({ type: "userMessage", content: [{ type: "text", text:
     "<send_user_message_question_reply>not JSON</send_user_message_question_reply>",
   }] }).answered, []);
+});
+
+test("legacy rehydrated question IDs match a unique exact question title and index", () => {
+  assert.equal(pendingQuestionIds({ turns: [{ items: [
+    ask("item-3", 1), reply([id("original-call", 0)], "userMessage"),
+  ] }] }).size, 0);
+  assert.equal(pendingQuestionIds({ turns: [{ items: [
+    ask("stable-call", 1), reply([id("different-call", 0)], "userMessage"),
+  ] }] }).size, 1, "stable IDs must never use title fallback");
+  assert.equal(pendingQuestionIds({ turns: [{ items: [
+    ask("item-3", 1), ask("item-4", 1), reply([id("original-call", 0)], "userMessage"),
+  ] }] }).size, 2, "ambiguous titles must not guess which question was answered");
+});
+
+test("a new user prompt supersedes earlier questions even inside a migrated single turn", () => {
+  const items = [ask("item-3", 1), { type: "userMessage", content: [{ type: "text", text: "New instructions" }] }];
+  assert.equal(pendingQuestionIds({ turns: [{ items }] }).size, 0);
+  items.push(ask("new-call", 1));
+  assert.deepEqual([...pendingQuestionIds({ turns: [{ items }] })], [id("new-call", 0)]);
 });
 
 test("question and reply patches request reconciliation, text streaming does not", () => {
