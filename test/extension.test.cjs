@@ -501,7 +501,7 @@ test("status icons are opt-in, update on live events, and toggle without reloadi
   }
   live.states.set(id, "idle");
   const idle = await item();
-  assert.equal(idle.iconPath.light, path.resolve(__dirname, "..", "assets", "status-empty.svg"));
+  assert.equal(idle.iconPath.light, path.resolve(__dirname, "..", "assets", "status-neutral.svg"));
   assert.match(idle.tooltip, /Idle \(live\)/);
   live.states.clear();
   live.onChange();
@@ -517,7 +517,7 @@ test("status icons are opt-in, update on live events, and toggle without reloadi
   assert.equal((await item()).iconPath.color.id, "errorForeground");
   await writeFile(filePath, "{}\n");
   const unknown = await item();
-  assert.deepEqual(unknown.iconPath, idle.iconPath, "inactive states preserve the same empty icon slot");
+  assert.deepEqual(unknown.iconPath, idle.iconPath, "inactive states preserve the same neutral dot");
   assert.match(unknown.tooltip, /Status unknown/);
   harness.setStatusIcons(false);
   assert.ok(watcher.disposed);
@@ -553,16 +553,16 @@ test("opening a green result hides its icon across reloads; a new result turns g
   const harness = createHarness(t, [], options);
   assert.equal((await item(harness)).iconPath.id, "pass");
   await harness.runCommand("codexExtras.openChat", id);
-  assert.equal((await item(harness)).iconPath.light, path.resolve(__dirname, "..", "assets", "status-empty.svg"));
+  assert.equal((await item(harness)).iconPath.light, path.resolve(__dirname, "..", "assets", "status-neutral.svg"));
   assert.match((await item(harness)).tooltip, /Result reviewed/);
   const reloaded = createHarness(t, [], { ...options, storedState: harness.storedState });
-  assert.equal((await item(reloaded)).iconPath.light, path.resolve(__dirname, "..", "assets", "status-empty.svg"));
+  assert.equal((await item(reloaded)).iconPath.light, path.resolve(__dirname, "..", "assets", "status-neutral.svg"));
   await appendFile(filePath, lifecycle("task_started", "turn-two"));
   assert.equal((await item(reloaded)).iconPath.id, "clock");
   await appendFile(filePath, lifecycle("task_complete", "turn-two"));
   assert.equal((await item(reloaded)).iconPath.id, "pass");
   await reloaded.runCommand("codexExtras.openChat", { id });
-  assert.equal((await item(reloaded)).iconPath.dark, path.resolve(__dirname, "..", "assets", "status-empty.svg"));
+  assert.equal((await item(reloaded)).iconPath.dark, path.resolve(__dirname, "..", "assets", "status-neutral.svg"));
 });
 
 test("a failed open or missing editor tab cannot consume a result", async (t) => {

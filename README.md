@@ -54,7 +54,7 @@ Enable **Codex Extras: Show Session Status Icons** for a spinner while working,
 a green check mark for a new result to review, a stop icon for interrupted turns,
 or an error icon for failed turns. A yellow question mark means an unanswered
 non-blocking question; the agent may still be working. It disappears after all
-questions have matching replies. Idle and unknown states leave the icon slot empty,
+questions have matching replies. Idle and unknown states show a small gray dot,
 preserving text alignment; their status remains available in the tooltip.
 Sending a new ordinary user message supersedes earlier questions, including
 older histories migrated into a single turn;
@@ -65,7 +65,7 @@ Changing the setting takes effect immediately.
 
 Opening a green chat through Codex Extras marks that specific result as reviewed
 after the open command succeeds and its editor tab exists. Its status icon then
-disappears, with an empty icon slot preserving text alignment. This is saved in VS Code extension storage across reloads. A later
+becomes a small gray dot, preserving text alignment. This is saved in VS Code extension storage across reloads. A later
 completed turn gets a new green mark; opening an older result cannot consume it.
 Failed opens do not mark results as reviewed. Blocking waits take priority over
 non-blocking questions, and unanswered questions take priority over other states.

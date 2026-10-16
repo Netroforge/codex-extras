@@ -27,9 +27,9 @@ const CODEX_NEW_PANEL_SCHEME = "openai-codex";
 const CODEX_ROUTE_AUTHORITY = "route";
 const CODEX_NEW_PANEL_PATH = "/extension/panel/new";
 const REVIEWED_RESULTS_KEY = "codexExtras.reviewedResults";
-const EMPTY_STATUS_ICON = {
-  light: path.join(__dirname, "assets", "status-empty.svg"),
-  dark: path.join(__dirname, "assets", "status-empty.svg"),
+const NEUTRAL_STATUS_ICON = {
+  light: path.join(__dirname, "assets", "status-neutral.svg"),
+  dark: path.join(__dirname, "assets", "status-neutral.svg"),
 };
 
 let panelSequence = 0;
@@ -74,7 +74,7 @@ class CodexChatItem extends vscode.TreeItem {
     ]
       .filter(Boolean)
       .join("\n");
-    this.iconPath = status && !status.icon ? EMPTY_STATUS_ICON : new vscode.ThemeIcon(
+    this.iconPath = status && !status.icon ? NEUTRAL_STATUS_ICON : new vscode.ThemeIcon(
       status?.icon ?? "comment-discussion",
       status ? new vscode.ThemeColor(status.color) : undefined,
     );
