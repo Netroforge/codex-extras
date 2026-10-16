@@ -4,6 +4,12 @@ All notable changes to Codex Extras are documented in this file.
 
 ## Unreleased
 
+- Show a yellow question mark for unanswered async questions, with blocking waits
+  taking priority. Match replies by question ID and keep unknown status distinct.
+- Treat green check marks as new results to review. Hide a specific result's icon
+  after its editor opens successfully, persist review state across reloads, and
+  show green again for a newer completed turn.
+
 - Apply consistent, theme-aware colors to status icons for working, completed,
   waiting, interrupted, failed, and inactive/unknown states.
 

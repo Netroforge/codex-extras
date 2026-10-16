@@ -35,12 +35,31 @@ read-only ownership discovery, and repeated runtime-state snapshots.
   `{hostId: "local", conversationId, following}`.
 - Runtime stream: `thread-stream-state-changed`, version 11. Snapshots contain
   `change.conversationState.threadRuntimeStatus`. Patches carry base and new
-  revisions. Only runtime-status fields are retained; transcript patches are ignored.
+  revisions. Retain runtime status and unresolved question IDs, never message text.
 - `active` means working; nonempty `activeFlags` means waiting for input/approval.
   `idle` means idle, `systemError` means failed, other states are unconfirmed.
 - An owner-disconnection event or lost IPC connection clears live states.
 - A revision gap requests a fresh snapshot. Unsupported versions cannot retain
   a running indicator. Discovery requests are answered with `canHandle: false`.
+
+## Questions and reviewed results
+
+Async questions are `agentMessage` items with `questions`. Their IDs are the JSON
+tuple `["request_user_input_async", item.id, questionIndex]`. User and steering
+messages carrying `<send_user_message_question_reply>` resolve those exact IDs.
+Inspect both `turns` and canonical `turnHistory.history.entitiesByKey`; deduplicate
+items and match replies independently of entity order. Retain only unresolved IDs.
+Question/reply patches request a debounced fresh snapshot; ordinary assistant text
+streaming does not trigger snapshot requests. Blocking runtime waits have priority,
+then unanswered async questions, then the underlying task state.
+
+A completion's identity is its rollout path plus turn ID (or lifecycle byte offset
+for older logs without a turn ID). Opening a green result through Extras records
+that identity in `globalState` under `codexExtras.reviewedResults`, only after
+`vscode.openWith` resolves and its local conversation tab exists. Capture the
+displayed identity before opening so a newer completion cannot be marked reviewed
+by a stale click. Reviewed completions have no status icon; a later completion has
+a different identity and is green again. No source transcripts are modified.
 
 The adapter never becomes an owner and sends no task-control requests. Receiving
 snapshots can temporarily decode conversation data in memory; it keeps no messages
@@ -57,4 +76,6 @@ are not currently supported for status discovery.
 
 Tests cover option toggling, log parsing and bounds, incomplete writes, live
 snapshots and runtime patches, waiting states, owner and transport disconnection,
-revision mismatch, protocol mismatch, frame bounds, and observer-only behavior.
+revision mismatch, protocol mismatch, frame bounds, observer-only behavior, async
+question/reply matching, and persistent review markers including failed opens and
+new completions racing with old editor opens.

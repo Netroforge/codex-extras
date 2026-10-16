@@ -135,3 +135,59 @@ test("rejects oversized frames and closes the connection on dispose", (t) => {
   live.dispose();
   assert.equal(live.states.size, 0);
 });
+
+test("unanswered async questions override work or idle; blocking waits take priority", (t) => {
+  const { live, socket, snapshot } = harness(t);
+  const withQuestions = (runtime, answered = false) => {
+    const message = snapshot(runtime);
+    const items = [{ type: "agentMessage", id: "call-one", questions: [{ title: "Private question" }] }];
+    if (answered) items.push({ type: "userMessage", content: [{ type: "text", text:
+      '<send_user_message_question_reply>' + JSON.stringify([{
+        questionItemId: JSON.stringify(["request_user_input_async", "call-one", 0]),
+        answer: "Private answer",
+      }]) + '</send_user_message_question_reply>',
+    }] });
+    message.params.change.conversationState.turnHistory = { history: { entitiesByKey: { one: { items } } } };
+    return message;
+  };
+  socket.emit("data", frame(withQuestions({ type: "active", activeFlags: [] })));
+  assert.equal(live.get("thread-one"), "question");
+  const retained = [...live.states.values()][0];
+  assert.equal(retained.pendingQuestions.size, 1);
+  assert.equal(JSON.stringify({ ...retained, pendingQuestions: [...retained.pendingQuestions] }).includes("Private"), false);
+  socket.emit("data", frame(withQuestions({ type: "idle" })));
+  assert.equal(live.get("thread-one"), "question", "questions remain visible after agent finishes");
+  socket.emit("data", frame(withQuestions({ type: "active", activeFlags: ["waitingOnUserInput"] })));
+  assert.equal(live.get("thread-one"), "waiting");
+  socket.emit("data", frame(withQuestions({ type: "active", activeFlags: [] }, true)));
+  assert.equal(live.get("thread-one"), "working");
+  socket.emit("data", frame(withQuestions({ type: "idle" }, true)));
+  assert.equal(live.get("thread-one"), "idle");
+});
+
+test("coalesces question patch reconciliation and cancels it on disconnect", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { live, socket, snapshot } = harness(t);
+  socket.emit("data", frame(snapshot({ type: "active", activeFlags: [] })));
+  const before = socket.writes.length;
+  const questionPath = ["turnHistory", "history", "entitiesByKey", "one", "items", 0, "questions"];
+  const patch = (baseRevision, revision, path) => ({
+    type: "broadcast", method: "thread-stream-state-changed", version: 11,
+    sourceClientId: "owner", params: { hostId: "local", conversationId: "thread-one",
+      change: { type: "patches", baseRevision, revision, patches: [{ op: "add", path, value: [] }] } },
+  });
+  socket.emit("data", frame(patch(1, 2, questionPath)));
+  socket.emit("data", frame(patch(2, 3, questionPath)));
+  assert.equal(socket.writes.length, before);
+  t.mock.timers.tick(100);
+  assert.equal(socket.writes.length, before + 1);
+  assert.equal(socket.writes.at(-1).params.following, true);
+  socket.emit("data", frame(patch(3, 4, questionPath.slice(0, -1).concat("text"))));
+  t.mock.timers.tick(100);
+  assert.equal(socket.writes.length, before + 1, "text streaming does not request snapshots");
+  socket.emit("data", frame(patch(4, 5, questionPath)));
+  socket.destroy();
+  t.mock.timers.tick(100);
+  assert.equal(socket.writes.length, before + 1, "disconnect cancels pending reconciliation");
+  assert.equal(live.get("thread-one"), undefined);
+});

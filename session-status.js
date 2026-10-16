@@ -86,6 +86,12 @@ class SessionStatusReader {
     }
   }
 
+  resultKey(filePath) {
+    const entry = this.cache.get(filePath);
+    if (entry?.event?.status !== "completed") return undefined;
+    return JSON.stringify([filePath, entry.event.turnId ?? entry.event.offset]);
+  }
+
   clear() {
     this.cache.clear();
   }

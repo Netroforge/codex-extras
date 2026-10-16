@@ -91,6 +91,11 @@ function createHarness(t, tabs = [], options = {}) {
       },
       async executeCommand(...args) {
         calls.push(args);
+        if (options.beforeOpen && args[0] === "vscode.openWith") await options.beforeOpen();
+        if (options.failOpen) throw new Error("Synthetic editor opening failure");
+        if (args[0] === "vscode.openWith" && args[1]?.path.startsWith("/local/") && !options.skipTabCreation) {
+          tabs.push({ input: { uri: args[1] } });
+        }
       },
     },
     Uri: {
@@ -198,7 +203,14 @@ function createHarness(t, tabs = [], options = {}) {
       },
     },
   };
-  const context = { subscriptions: [] };
+  const storedState = options.storedState ?? new Map();
+  const context = {
+    subscriptions: [],
+    globalState: {
+      get: (key, fallback) => storedState.get(key) ?? fallback,
+      async update(key, value) { storedState.set(key, value); },
+    },
+  };
   const originalCodexHome = process.env.CODEX_HOME;
 
   if (options.codexHome) {
@@ -227,6 +239,7 @@ function createHarness(t, tabs = [], options = {}) {
     treeViews,
     fileWatchers,
     liveMonitors,
+    storedState,
     setStatusIcons(value) {
       showStatusIcons = value;
       configurationChanged.fire({
@@ -479,6 +492,7 @@ test("status icons are opt-in, update on live events, and toggle without reloadi
   assert.match((await item()).accessibilityInformation.label, /Working/);
   for (const [state, icon, color] of [
     ["waiting", "bell", "charts.yellow"],
+    ["question", "question", "charts.yellow"],
     ["idle", "circle-outline", "descriptionForeground"],
   ]) {
     live.states.set(id, state);
@@ -499,7 +513,7 @@ test("status icons are opt-in, update on live events, and toggle without reloadi
   assert.equal((await item()).iconPath.id, "error");
   assert.equal((await item()).iconPath.color.id, "errorForeground");
   await writeFile(filePath, "{}\n");
-  assert.equal((await item()).iconPath.id, "question");
+  assert.equal((await item()).iconPath.id, "circle-slash");
   assert.equal((await item()).iconPath.color.id, "descriptionForeground");
   harness.setStatusIcons(false);
   assert.ok(watcher.disposed);
@@ -508,4 +522,74 @@ test("status icons are opt-in, update on live events, and toggle without reloadi
   assert.equal((await item()).iconPath.id, "comment-discussion");
   assert.equal(reads, previousReads);
   assert.equal(provider.sessionStatusReader.cache.size, 0);
+});
+
+async function resultFixture(t) {
+  const codexHome = await mkdtemp(path.join(os.tmpdir(), "codex-extras-reviewed-"));
+  t.after(() => rm(codexHome, { recursive: true, force: true }));
+  const id = "019f9c23-f7ec-72c3-8eb6-0018b17bea4f";
+  await mkdir(path.join(codexHome, "sessions"));
+  const filePath = path.join(codexHome, "sessions", `rollout-${id}.jsonl`);
+  const lifecycle = (type, turnId) => JSON.stringify({
+    type: "event_msg", payload: { type, turn_id: turnId },
+  }) + "\n";
+  await writeFile(filePath, lifecycle("task_complete", "turn-one"));
+  await writeFile(path.join(codexHome, "session_index.jsonl"), JSON.stringify({ id, thread_name: "Review test" }));
+  const options = { codexHome, workspaceFolders: [], showSessionStatusIcons: true };
+  const item = async (harness) => {
+    const provider = harness.treeViews[0].options.treeDataProvider;
+    const groups = await provider.getChildren();
+    return (await provider.getChildren(groups[0]))[0];
+  };
+  return { id, filePath, lifecycle, options, item };
+}
+
+test("opening a green result hides its icon across reloads; a new result turns green again", async (t) => {
+  const { id, filePath, lifecycle, options, item } = await resultFixture(t);
+  const harness = createHarness(t, [], options);
+  assert.equal((await item(harness)).iconPath.id, "pass");
+  await harness.runCommand("codexExtras.openChat", id);
+  assert.equal((await item(harness)).iconPath, undefined);
+  assert.match((await item(harness)).tooltip, /Result reviewed/);
+  const reloaded = createHarness(t, [], { ...options, storedState: harness.storedState });
+  assert.equal((await item(reloaded)).iconPath, undefined);
+  await appendFile(filePath, lifecycle("task_started", "turn-two"));
+  assert.equal((await item(reloaded)).iconPath.id, "clock");
+  await appendFile(filePath, lifecycle("task_complete", "turn-two"));
+  assert.equal((await item(reloaded)).iconPath.id, "pass");
+  await reloaded.runCommand("codexExtras.openChat", { id });
+  assert.equal((await item(reloaded)).iconPath, undefined);
+});
+
+test("a failed open or missing editor tab cannot consume a result", async (t) => {
+  const { id, options, item } = await resultFixture(t);
+  const harness = createHarness(t, [], { ...options, failOpen: true });
+  assert.equal((await item(harness)).iconPath.id, "pass");
+  await assert.rejects(harness.runCommand("codexExtras.openChat", id), /opening failure/);
+  assert.equal((await item(harness)).iconPath.id, "pass");
+  assert.equal(harness.storedState.size, 0);
+  const noTab = createHarness(t, [], { ...options, skipTabCreation: true });
+  await item(noTab);
+  await noTab.runCommand("codexExtras.openChat", id);
+  assert.equal((await item(noTab)).iconPath.id, "pass");
+});
+
+test("opening an old result never consumes a newer turn that finishes during opening", async (t) => {
+  const { id, filePath, lifecycle, options, item } = await resultFixture(t);
+  const harness = createHarness(t, [], { ...options, async beforeOpen() {
+    await appendFile(filePath, lifecycle("task_started", "turn-two") + lifecycle("task_complete", "turn-two"));
+  } });
+  await item(harness);
+  await harness.runCommand("codexExtras.openChat", id);
+  assert.equal((await item(harness)).iconPath.id, "pass");
+});
+
+test("a stale tree item consumes only the result that item displayed", async (t) => {
+  const { filePath, lifecycle, options, item } = await resultFixture(t);
+  const harness = createHarness(t, [], options);
+  const oldItem = await item(harness);
+  await appendFile(filePath, lifecycle("task_complete", "turn-two"));
+  await item(harness);
+  await harness.runCommand(oldItem.command.command, ...oldItem.command.arguments);
+  assert.equal((await item(harness)).iconPath.id, "pass");
 });

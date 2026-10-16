@@ -51,14 +51,23 @@ The official Codex extension is declared as a dependency and is installed automa
 | `codexExtras.showSessionStatusIcons` | `false` | Experimental: replaces conversation icons with live task status and recorded completion events. |
 
 Enable **Codex Extras: Show Session Status Icons** for a spinner while working,
-a check mark after completion, a stop icon for interrupted turns, or an error icon
-for failed turns. A question mark means no supported lifecycle event was found.
+a green check mark for a new result to review, a stop icon for interrupted turns,
+or an error icon for failed turns. A yellow question mark means an unanswered
+non-blocking question; the agent may still be working. It disappears after all
+questions have matching replies. A gray slashed circle means status is unknown.
 A bell means Codex is waiting for input or approval, and a hollow circle means idle.
 A clock means activity is unconfirmed, not that the task has completed.
 Changing the setting takes effect immediately.
 
-Status icons use theme-aware colors: blue for working, green for completed,
-yellow for waiting, orange for interrupted, red for failed, and muted foreground
+Opening a green chat through Codex Extras marks that specific result as reviewed
+after the open command succeeds and its editor tab exists. Its status icon then
+disappears. This is saved in VS Code extension storage across reloads. A later
+completed turn gets a new green mark; opening an older result cannot consume it.
+Failed opens do not mark results as reviewed. Blocking waits take priority over
+non-blocking questions, and unanswered questions take priority over other states.
+
+Status icons use theme-aware colors: blue for working, green for new results,
+yellow for questions/waiting, orange for interrupted, red for failed, and muted foreground
 for idle or unknown/unconfirmed states. Shapes and tooltip labels also identify
 each state, so color is not the only cue.
 
@@ -99,7 +108,7 @@ Codex Extras contains no telemetry or network requests. It reads the local Codex
 session index to populate the chat list and opens editor panels provided by the
 official Codex extension. If status icons are enabled, it also reads a bounded
 tail of session logs locally to identify lifecycle events and receives local IPC
-state snapshots. Only runtime status is retained from snapshots; conversation
+state snapshots. Only runtime status and unanswered question IDs are retained from snapshots; conversation
 messages are discarded and are never displayed, saved, or sent elsewhere.
 
 ## Contributing

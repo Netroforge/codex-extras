@@ -4,6 +4,7 @@ const net = require("node:net");
 const os = require("node:os");
 const path = require("node:path");
 const { randomUUID } = require("node:crypto");
+const { pendingQuestionIds, questionPatchMayChange } = require("./session-questions");
 
 // Experimental: this is Codex's internal cross-window protocol, not its public
 // app-server API. Reject unknown stream versions rather than infer activity.
@@ -30,6 +31,7 @@ class LiveSessionStatus {
       : path.join(os.tmpdir(), "codex-ipc", process.getuid?.() ? `ipc-${process.getuid()}.sock` : "ipc.sock");
     this.threads = new Set();
     this.states = new Map();
+    this.snapshotRequests = new Map();
     this.buffer = Buffer.alloc(0);
     this.disposed = false;
     this.start();
@@ -69,6 +71,7 @@ class LiveSessionStatus {
       this.clientId = undefined;
       this.buffer = Buffer.alloc(0);
       this.states.clear();
+      this.clearSnapshotRequests();
       this.onChange();
       if (!this.disposed) {
         this.retry = setTimeout(() => this.start(!useLegacy && !!this.legacyEndpoint), 2000);
@@ -98,10 +101,27 @@ class LiveSessionStatus {
       if (!next.has(id)) {
         this.follow(id, false);
         this.states.delete(id);
+        clearTimeout(this.snapshotRequests.get(id));
+        this.snapshotRequests.delete(id);
       }
     }
     for (const id of next) if (!this.threads.has(id)) this.follow(id, true);
     this.threads = next;
+  }
+
+  requestSnapshot(id) {
+    if (this.snapshotRequests.has(id)) return;
+    const timer = setTimeout(() => {
+      this.snapshotRequests.delete(id);
+      if (this.threads.has(id)) this.follow(id, true);
+    }, 100);
+    timer.unref();
+    this.snapshotRequests.set(id, timer);
+  }
+
+  clearSnapshotRequests() {
+    for (const timer of this.snapshotRequests.values()) clearTimeout(timer);
+    this.snapshotRequests.clear();
   }
 
   receive(message) {
@@ -125,7 +145,11 @@ class LiveSessionStatus {
     if (message.method === "client-status-changed") {
       if (message.params?.status === "disconnected") {
         for (const [id, state] of this.states) {
-          if (state.owner === message.params.clientId) this.states.delete(id);
+          if (state.owner === message.params.clientId) {
+            this.states.delete(id);
+            clearTimeout(this.snapshotRequests.get(id));
+            this.snapshotRequests.delete(id);
+          }
         }
         this.onChange();
       }
@@ -148,9 +172,13 @@ class LiveSessionStatus {
       return;
     }
     let value;
+    let pendingQuestions = previous?.pendingQuestions ?? new Set();
     if (change?.type === "snapshot") {
-      // Keep only runtime status; discard conversation messages immediately.
+      // Retain runtime status and unresolved IDs, never question/answer text.
       value = change.conversationState?.threadRuntimeStatus;
+      pendingQuestions = pendingQuestionIds(change.conversationState);
+      clearTimeout(this.snapshotRequests.get(id));
+      this.snapshotRequests.delete(id);
     } else if (change?.type === "patches") {
       if (!previous || previous.owner !== message.sourceClientId ||
           previous.revision !== change.baseRevision) {
@@ -163,6 +191,7 @@ class LiveSessionStatus {
       for (const patch of change.patches ?? []) {
         const segments = Array.isArray(patch.path) ? patch.path
           : typeof patch.path === "string" ? patch.path.split("/").slice(1) : [];
+        if (questionPatchMayChange(patch, segments)) this.requestSnapshot(id);
         if (!segments.length) {
           value = patch.value?.threadRuntimeStatus;
         } else if (segments[0] === "threadRuntimeStatus") {
@@ -180,8 +209,12 @@ class LiveSessionStatus {
       this.onChange();
       return;
     }
-    const status = runtimeStatus(value);
-    this.states.set(id, { owner: message.sourceClientId, revision: change.revision, runtime: value, status });
+    const baseStatus = runtimeStatus(value);
+    const status = baseStatus === "waiting" ? "waiting"
+      : pendingQuestions.size ? "question" : baseStatus;
+    this.states.set(id, {
+      owner: message.sourceClientId, revision: change.revision, runtime: value, status, pendingQuestions,
+    });
     if (status !== previous?.status) this.onChange();
   }
 
@@ -192,6 +225,7 @@ class LiveSessionStatus {
   dispose() {
     this.disposed = true;
     clearTimeout(this.retry);
+    this.clearSnapshotRequests();
     for (const id of this.threads) this.follow(id, false);
     this.states.clear();
     this.socket?.destroy();
