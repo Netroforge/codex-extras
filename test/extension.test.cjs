@@ -549,16 +549,16 @@ test("opening a green result hides its icon across reloads; a new result turns g
   const harness = createHarness(t, [], options);
   assert.equal((await item(harness)).iconPath.id, "pass");
   await harness.runCommand("codexExtras.openChat", id);
-  assert.equal((await item(harness)).iconPath, undefined);
+  assert.equal((await item(harness)).iconPath.light, path.resolve(__dirname, "..", "assets", "status-empty.svg"));
   assert.match((await item(harness)).tooltip, /Result reviewed/);
   const reloaded = createHarness(t, [], { ...options, storedState: harness.storedState });
-  assert.equal((await item(reloaded)).iconPath, undefined);
+  assert.equal((await item(reloaded)).iconPath.light, path.resolve(__dirname, "..", "assets", "status-empty.svg"));
   await appendFile(filePath, lifecycle("task_started", "turn-two"));
   assert.equal((await item(reloaded)).iconPath.id, "clock");
   await appendFile(filePath, lifecycle("task_complete", "turn-two"));
   assert.equal((await item(reloaded)).iconPath.id, "pass");
   await reloaded.runCommand("codexExtras.openChat", { id });
-  assert.equal((await item(reloaded)).iconPath, undefined);
+  assert.equal((await item(reloaded)).iconPath.dark, path.resolve(__dirname, "..", "assets", "status-empty.svg"));
 });
 
 test("a failed open or missing editor tab cannot consume a result", async (t) => {

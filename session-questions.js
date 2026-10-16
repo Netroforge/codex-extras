@@ -34,18 +34,43 @@ function itemQuestionIds(item) {
   return { asked, answered };
 }
 
+function orderedTurns(state) {
+  const history = state?.turnHistory?.history;
+  const entities = history?.entitiesByKey;
+  if (entities && Object.keys(entities).length) {
+    const entries = (history.islands ?? []).flatMap((island) => island.entries ?? []);
+    if (entries.length) {
+      // Hydrated entity insertion order is not conversation order.
+      return { turns: entries.map((entry) => entities[entry.value]).filter(Boolean), ordered: true };
+    }
+    const turns = Object.values(entities);
+    const ordered = turns.every((turn) => Number.isFinite(turn?.turnStartedAtMs));
+    if (ordered) turns.sort((left, right) => left.turnStartedAtMs - right.turnStartedAtMs);
+    return { turns, ordered };
+  }
+  return { turns: Array.isArray(state?.turns) ? state.turns : [], ordered: true };
+}
+
+function isNewUserPrompt(item) {
+  if (item?.type !== "userMessage" || !Array.isArray(item.content)) return false;
+  const text = item.content.filter((part) => part?.type === "text")
+    .map((part) => part.text ?? "").join("\n").trim();
+  // Even an unsupported/malformed structured reply is not a new task.
+  return text.length > 0 && !text.startsWith(REPLY_START);
+}
+
 function pendingQuestionIds(state) {
   const asked = new Set();
   const answered = new Set();
-  const turns = [
-    ...(Array.isArray(state?.turns) ? state.turns : []),
-    ...Object.values(state?.turnHistory?.history?.entitiesByKey ?? {}),
-  ];
+  const { turns, ordered } = orderedTurns(state);
   for (const turn of turns) {
     if (!Array.isArray(turn?.items)) continue;
+    if (ordered && turn.items.some(isNewUserPrompt)) asked.clear();
     for (const item of turn.items) {
       const ids = itemQuestionIds(item);
-      for (const id of ids.asked) asked.add(id);
+      if (turn.status !== "interrupted" && turn.status !== "failed") {
+        for (const id of ids.asked) asked.add(id);
+      }
       for (const id of ids.answered) answered.add(id);
     }
   }
@@ -59,6 +84,7 @@ function questionPatchMayChange(patch, segments) {
   if (!segments.length) return true;
   if (segments[0] !== "turnHistory" && segments[0] !== "turns") return false;
   if (segments.includes("questions")) return true;
+  if ((segments.at(-1) === "status" && !segments.includes("items")) || segments.includes("islands")) return true;
   if (segments[0] === "turns" && segments.length <= 2) return true;
   if (segments[0] === "turnHistory" && segments.length <= 4 &&
       !["generation", "isComplete", "islands"].includes(segments.at(-1))) return true;
@@ -68,7 +94,7 @@ function questionPatchMayChange(patch, segments) {
   if (segments.length === itemIndex + 2) {
     if (patch.op === "remove") return true;
     const ids = itemQuestionIds(patch.value);
-    return ids.asked.length > 0 || ids.answered.length > 0;
+    return ids.asked.length > 0 || ids.answered.length > 0 || isNewUserPrompt(patch.value);
   }
   return ["input", "content", "type", "id"].includes(segments[itemIndex + 2]);
 }

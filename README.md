@@ -55,13 +55,15 @@ a green check mark for a new result to review, a stop icon for interrupted turns
 or an error icon for failed turns. A yellow question mark means an unanswered
 non-blocking question; the agent may still be working. It disappears after all
 questions have matching replies. A gray slashed circle means status is unknown.
+Starting a new ordinary user turn supersedes questions from earlier turns;
+interrupted or failed turns do not keep abandoned questions active.
 A bell means Codex is waiting for input or approval, and a hollow circle means idle.
 A clock means activity is unconfirmed, not that the task has completed.
 Changing the setting takes effect immediately.
 
 Opening a green chat through Codex Extras marks that specific result as reviewed
 after the open command succeeds and its editor tab exists. Its status icon then
-disappears. This is saved in VS Code extension storage across reloads. A later
+disappears, with an empty icon slot preserving text alignment. This is saved in VS Code extension storage across reloads. A later
 completed turn gets a new green mark; opening an older result cannot consume it.
 Failed opens do not mark results as reviewed. Blocking waits take priority over
 non-blocking questions, and unanswered questions take priority over other states.

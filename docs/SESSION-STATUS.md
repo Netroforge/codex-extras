@@ -49,6 +49,11 @@ tuple `["request_user_input_async", item.id, questionIndex]`. User and steering
 messages carrying `<send_user_message_question_reply>` resolve those exact IDs.
 Inspect both `turns` and canonical `turnHistory.history.entitiesByKey`; deduplicate
 items and match replies independently of entity order. Retain only unresolved IDs.
+Use canonical island entry order (or recorded turn start times), not entity map
+insertion order, to expire old questions when a newer ordinary user turn starts.
+A structured async reply resolves its IDs without superseding remaining questions.
+Questions in interrupted/failed turns are abandoned. If history order cannot be
+established, do not guess which prompt supersedes which question.
 Question/reply patches request a debounced fresh snapshot; ordinary assistant text
 streaming does not trigger snapshot requests. Blocking runtime waits have priority,
 then unanswered async questions, then the underlying task state.
@@ -58,7 +63,8 @@ for older logs without a turn ID). Opening a green result through Extras records
 that identity in `globalState` under `codexExtras.reviewedResults`, only after
 `vscode.openWith` resolves and its local conversation tab exists. Capture the
 displayed identity before opening so a newer completion cannot be marked reviewed
-by a stale click. Reviewed completions have no status icon; a later completion has
+by a stale click. Reviewed completions use a transparent 16 px placeholder to
+preserve label alignment without a visible status icon; a later completion has
 a different identity and is green again. No source transcripts are modified.
 
 The adapter never becomes an owner and sends no task-control requests. Receiving

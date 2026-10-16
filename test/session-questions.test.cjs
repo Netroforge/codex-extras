@@ -60,4 +60,37 @@ test("question and reply patches request reconciliation, text streaming does not
   assert.equal(questionPatchMayChange({ op: "replace" }, [...prefix, 3, "text"]), false);
   assert.equal(questionPatchMayChange({ op: "replace" }, ["threadRuntimeStatus"]), false);
   assert.equal(questionPatchMayChange({ op: "add", value: { type: "toolCall", id: "tool" } }, [...prefix, 3]), false);
+  assert.equal(questionPatchMayChange({ op: "add", value: {
+    type: "userMessage", content: [{ type: "text", text: "New task" }],
+  } }, [...prefix, 4]), true);
+});
+
+test("a newer ordinary user turn supersedes old async questions in canonical history order", () => {
+  const prompt = { type: "userMessage", content: [{ type: "text", text: "Continue with the next task" }] };
+  const state = { turnHistory: { history: {
+    // Entity insertion order differs from conversation order, as in a hydrated UI.
+    entitiesByKey: {
+      new: { items: [prompt] },
+      old: { items: [ask("old-call", 1)] },
+    },
+    islands: [{ entries: [{ value: "old" }, { value: "new" }] }],
+  } } };
+  assert.equal(pendingQuestionIds(state).size, 0);
+  state.turnHistory.history.entitiesByKey.new.items.push(ask("new-call", 1));
+  assert.deepEqual([...pendingQuestionIds(state)], [id("new-call", 0)]);
+});
+
+test("an async reply in a newer turn does not supersede other pending questions", () => {
+  const state = { turns: [
+    { items: [ask("call-one", 2)] },
+    { items: [reply([id("call-one", 0)], "userMessage")] },
+  ] };
+  assert.deepEqual([...pendingQuestionIds(state)], [id("call-one", 1)]);
+});
+
+test("interrupted and failed turns do not keep abandoned questions active", () => {
+  for (const status of ["interrupted", "failed"]) {
+    assert.equal(pendingQuestionIds({ turns: [{ status, items: [ask("old-call", 1)] }] }).size, 0);
+  }
+  assert.equal(pendingQuestionIds({ turns: [{ status: "completed", items: [ask("current-call", 1)] }] }).size, 1);
 });

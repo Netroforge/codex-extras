@@ -4,6 +4,10 @@ All notable changes to Codex Extras are documented in this file.
 
 ## Unreleased
 
+- Expire superseded async questions using actual conversation order, and discard
+  questions from interrupted/failed turns instead of showing stale question marks.
+- Preserve label alignment with a transparent icon slot after a result is reviewed.
+
 - Show a yellow question mark for unanswered async questions, with blocking waits
   taking priority. Match replies by question ID and keep unknown status distinct.
 - Treat green check marks as new results to review. Hide a specific result's icon
