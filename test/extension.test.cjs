@@ -6,9 +6,52 @@ const Module = require("node:module");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
+const { setTimeout: delay } = require("node:timers/promises");
 
 const extensionPath = path.resolve(__dirname, "..", "extension.js");
 const originalLoad = Module._load;
+
+test("hides an already archived session that remains in the index", async (t) => {
+  const codexHome = await mkdtemp(path.join(os.tmpdir(), "codex-extras-archived-"));
+  t.after(() => rm(codexHome, { recursive: true, force: true }));
+  const id = "019f9c23-f7ec-72c3-8eb6-0018b17bea4f";
+  await mkdir(path.join(codexHome, "archived_sessions"));
+  await writeFile(path.join(codexHome, "archived_sessions", `rollout-${id}.jsonl`), "");
+  await writeFile(path.join(codexHome, "session_index.jsonl"), JSON.stringify({ id }));
+  const harness = createHarness(t, [], { codexHome, workspaceFolders: [] });
+  assert.deepEqual(await harness.treeViews[0].options.treeDataProvider.getChildren(), []);
+});
+
+test("hides archived chats and refreshes on archive and restore without index changes", async (t) => {
+  const codexHome = await mkdtemp(path.join(os.tmpdir(), "codex-extras-archive-"));
+  t.after(() => rm(codexHome, { recursive: true, force: true }));
+  const id = "019f9c23-f7ec-72c3-8eb6-0018b17bea4f";
+  const index = JSON.stringify({ id, thread_name: "Archived regression" });
+  await writeFile(path.join(codexHome, "session_index.jsonl"), index);
+  const harness = createHarness(t, [], { codexHome, workspaceFolders: [] });
+  const provider = harness.treeViews[0].options.treeDataProvider;
+  let changes = 0;
+  provider.onDidChangeTreeData(() => changes++);
+  const waitForChange = async (previous) => {
+    const deadline = Date.now() + 5000;
+    while (changes === previous && Date.now() < deadline) await delay(25);
+    assert.ok(changes > previous, "archive changes must refresh the panel");
+  };
+  assert.equal((await provider.getChildren())[0].sessions.length, 1);
+  const archive = path.join(codexHome, "archived_sessions", "2026", "10");
+  await mkdir(archive, { recursive: true });
+  let previous = changes;
+  const archivedFile = path.join(archive, `rollout-${id}.jsonl.zst`);
+  await writeFile(archivedFile, "compressed contents need not be read");
+  await waitForChange(previous);
+  assert.deepEqual(await provider.getChildren(), []);
+  previous = changes;
+  await rm(archivedFile);
+  await waitForChange(previous);
+  assert.equal((await provider.getChildren())[0].sessions[0].id, id);
+  const { readFile } = require("node:fs/promises");
+  assert.equal(await readFile(path.join(codexHome, "session_index.jsonl"), "utf8"), index);
+});
 
 function loadExtension(vscode) {
   delete require.cache[extensionPath];
@@ -63,6 +106,12 @@ function createHarness(t, tabs = [], options = {}) {
   }
 
   const vscode = {
+    RelativePattern: class RelativePattern {
+      constructor(base, pattern) {
+        this.base = base;
+        this.pattern = pattern;
+      }
+    },
     commands: {
       registerCommand(command, handler) {
         commandHandlers.set(command, handler);
@@ -93,6 +142,36 @@ function createHarness(t, tabs = [], options = {}) {
       Expanded: 2,
     },
     workspace: {
+      createFileSystemWatcher(pattern) {
+        const created = new EventEmitter();
+        const deleted = new EventEmitter();
+        // Exercise real filesystem changes in the temporary Codex home. The
+        // production extension delegates watcher lifecycle to VS Code.
+        let nativeWatcher;
+        if (options.codexHome) {
+          nativeWatcher = require("node:fs").watch(
+            options.codexHome, { recursive: true }, (event, filename) => {
+              if (event !== "rename" || !filename) return;
+              const fsPath = path.join(options.codexHome, filename);
+              const relative = path.relative(pattern.base, fsPath);
+              const matches = pattern.pattern === "*"
+                ? relative !== "" && !relative.includes(path.sep) && !relative.startsWith("..")
+                : relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+              if (matches) created.fire({ fsPath });
+            },
+          );
+          nativeWatcher.on("error", () => {});
+        }
+        return {
+          onDidCreate: created.event,
+          onDidDelete: deleted.event,
+          dispose() {
+            nativeWatcher?.close();
+            created.dispose();
+            deleted.dispose();
+          },
+        };
+      },
       workspaceFolders: options.workspaceFolders ?? [
         {
           name: "codex-extras",

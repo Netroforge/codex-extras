@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const { readFile } = require("node:fs/promises");
 const path = require("node:path");
 const vscode = require("vscode");
+const { loadArchivedSessionIds, watchArchivedSessions } = require("./session-archive");
 const {
   getSessionIndexPath,
   getSessionsDirectory,
@@ -80,6 +81,7 @@ class CodexChatHistoryProvider {
   constructor(sessionIndexPath, sessionsDirectory, getWorkspaceFolders) {
     this.sessionIndexPath = sessionIndexPath;
     this.sessionsDirectory = sessionsDirectory;
+    this.archiveDirectory = path.join(path.dirname(sessionIndexPath), "archived_sessions");
     this.getWorkspaceFolders = getWorkspaceFolders;
     this.workspaceBySessionId = new Map();
     this.changeEmitter = new vscode.EventEmitter();
@@ -107,7 +109,10 @@ class CodexChatHistoryProvider {
 
     try {
       const contents = await readFile(this.sessionIndexPath, "utf8");
-      const sessions = parseSessionIndex(contents);
+      const archivedIds = await loadArchivedSessionIds(this.archiveDirectory);
+      const sessions = parseSessionIndex(contents).filter(
+        (session) => !archivedIds.has(session.id.toLowerCase()),
+      );
       const missingWorkspaceIds = sessions
         .filter((session) => !this.workspaceBySessionId.has(session.id))
         .map((session) => session.id);
@@ -391,6 +396,7 @@ function activate(context) {
     visibilitySubscription,
     workspaceSubscription,
     watchSessionIndex(sessionIndexPath, () => historyProvider.refresh()),
+    watchArchivedSessions(historyProvider.archiveDirectory, () => historyProvider.refresh(), vscode),
   );
 }
 
