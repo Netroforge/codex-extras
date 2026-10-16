@@ -2,6 +2,13 @@
 
 All notable changes to Codex Extras are documented in this file.
 
+## Unreleased
+
+- Hide archived chats even when they remain in the session index.
+- Refresh after archiving or restoring chats without requiring an index change;
+  use scoped VS Code file system watchers, coalesce bursts of events, and
+  support nested archives and compressed `.jsonl.zst` files.
+
 ## 1.1.0
 
 - Add a Codex Chats Activity Bar panel with local chat history, automatic

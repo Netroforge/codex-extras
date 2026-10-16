@@ -21,6 +21,8 @@ conversations ordered by their most recent activity.
 - Select a chat to open it as a pinned Codex editor tab.
 - Start a new chat or refresh the list from the panel toolbar.
 - New and renamed chats appear automatically while VS Code is running.
+- Archived chats are hidden, including compressed archives. File system events
+  refresh the list after archiving or restoring a chat, without polling the archive.
 
 The panel reads Codex's local session index from `$CODEX_HOME/session_index.jsonl`
 when `CODEX_HOME` is set, or from `~/.codex/session_index.jsonl` otherwise.
