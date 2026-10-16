@@ -6,6 +6,7 @@ const Module = require("node:module");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
+const { setTimeout: delay } = require("node:timers/promises");
 
 const extensionPath = path.resolve(__dirname, "..", "extension.js");
 const originalLoad = Module._load;
@@ -465,7 +466,7 @@ test("status icons are opt-in, update on live events, and toggle without reloadi
   assert.equal((await item()).iconPath.id, "comment-discussion");
   assert.equal((await item()).iconPath.color, undefined);
   assert.equal(reads, 0, "disabled mode must not read status logs");
-  assert.equal(harness.fileWatchers.length, 2, "only archive watchers when disabled");
+  assert.equal(harness.fileWatchers.length, 0, "no status watchers when disabled");
   assert.equal(harness.liveMonitors.length, 0, "no IPC connection when disabled");
   harness.setStatusIcons(true);
   assert.equal((await item()).iconPath.id, "pass");

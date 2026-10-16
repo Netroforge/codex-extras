@@ -69,7 +69,7 @@ that identity in `globalState` under `codexExtras.reviewedResults`, only after
 `vscode.openWith` resolves and its local conversation tab exists. Capture the
 displayed identity before opening so a newer completion cannot be marked reviewed
 by a stale click. Reviewed completions use a small gray dot in a 16 px icon slot to
-preserve label alignment without a visible status icon; a later completion has
+preserve label alignment; a later completion has
 a different identity and is green again. No source transcripts are modified.
 
 The adapter never becomes an owner and sends no task-control requests. Receiving

@@ -4,31 +4,15 @@ All notable changes to Codex Extras are documented in this file.
 
 ## Unreleased
 
-- Replace the blank status placeholder with a small gray dot for reviewed, idle,
-  and unknown states, keeping labels aligned.
-
-- Hide idle and unknown icons while preserving their space and tooltip status.
-
-- Fix false async-question indicators in migrated histories whose call IDs were
-  replaced with `item-N`, and process follow-up messages within merged turns.
-
-- Expire superseded async questions using actual conversation order, and discard
-  questions from interrupted/failed turns instead of showing stale question marks.
-- Preserve label alignment with a transparent icon slot after a result is reviewed.
-
-- Show a yellow question mark for unanswered async questions, with blocking waits
-  taking priority. Match replies by question ID and keep unknown status distinct.
-- Treat green check marks as new results to review. Hide a specific result's icon
-  after its editor opens successfully, persist review state across reloads, and
-  show green again for a newer completed turn.
-
-- Apply consistent, theme-aware colors to status icons for working, completed,
-  waiting, interrupted, failed, and inactive/unknown states.
-
-- Add opt-in session status icons, using experimental local Codex IPC for live
-  activity and bounded log reads for recorded results. Never infer running from
-  unfinished logs; invalidate live activity on disconnection. Keep the original
-  conversation icons by default.
+- Add experimental, opt-in session status icons. Use local Codex IPC for live
+  work and input/approval waits, and bounded log reads for recorded results.
+  Keep the original chat icons and metadata-only reads by default.
+- Show unanswered non-blocking questions, resolve replies independently, and
+  discard superseded or abandoned questions, including migrated histories.
+- Mark new results in green until opened successfully through Codex Extras;
+  persist review state and protect newer results from stale clicks.
+- Use theme-aware status colors and a small gray dot for reviewed, idle, and
+  unknown states, preserving label alignment. Document protocol limitations.
 
 ## 1.1.0
 
