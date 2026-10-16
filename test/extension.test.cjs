@@ -1,20 +1,24 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const { mkdtemp, mkdir, rm, writeFile } = require("node:fs/promises");
+const { appendFile, mkdtemp, mkdir, rm, writeFile } = require("node:fs/promises");
 const Module = require("node:module");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
+const { setTimeout: delay } = require("node:timers/promises");
 
 const extensionPath = path.resolve(__dirname, "..", "extension.js");
 const originalLoad = Module._load;
 
-function loadExtension(vscode) {
+function loadExtension(vscode, LiveStatus) {
   delete require.cache[extensionPath];
   Module._load = function load(request, parent, isMain) {
     if (request === "vscode") {
       return vscode;
+    }
+    if (request === "./session-live-status" && LiveStatus) {
+      return { LiveSessionStatus: LiveStatus };
     }
 
     return originalLoad.call(this, request, parent, isMain);
@@ -62,7 +66,25 @@ function createHarness(t, tabs = [], options = {}) {
     }
   }
 
+  const configurationChanged = new EventEmitter();
+  let showStatusIcons = options.showSessionStatusIcons ?? false;
+  const fileWatchers = [];
+  const liveMonitors = [];
+  class LiveStatus {
+    constructor({ onChange }) {
+      this.states = new Map();
+      this.onChange = onChange;
+      liveMonitors.push(this);
+    }
+    setThreads(ids) { this.threads = new Set(ids); }
+    get(id) { return this.states.get(id); }
+    dispose() { this.disposed = true; this.states.clear(); }
+  }
+
   const vscode = {
+    RelativePattern: class RelativePattern {
+      constructor(base, pattern) { this.base = base; this.pattern = pattern; }
+    },
     commands: {
       registerCommand(command, handler) {
         commandHandlers.set(command, handler);
@@ -70,6 +92,11 @@ function createHarness(t, tabs = [], options = {}) {
       },
       async executeCommand(...args) {
         calls.push(args);
+        if (options.beforeOpen && args[0] === "vscode.openWith") await options.beforeOpen();
+        if (options.failOpen) throw new Error("Synthetic editor opening failure");
+        if (args[0] === "vscode.openWith" && args[1]?.path.startsWith("/local/") && !options.skipTabCreation) {
+          tabs.push({ input: { uri: args[1] } });
+        }
       },
     },
     Uri: {
@@ -82,6 +109,12 @@ function createHarness(t, tabs = [], options = {}) {
     },
     EventEmitter,
     ThemeIcon: class ThemeIcon {
+      constructor(id, color) {
+        this.id = id;
+        this.color = color;
+      }
+    },
+    ThemeColor: class ThemeColor {
       constructor(id) {
         this.id = id;
       }
@@ -93,6 +126,53 @@ function createHarness(t, tabs = [], options = {}) {
       Expanded: 2,
     },
     workspace: {
+      getConfiguration(section) {
+        assert.equal(section, "codexExtras");
+        return { get: (key, fallback) => key === "showSessionStatusIcons" ? showStatusIcons : fallback };
+      },
+      onDidChangeConfiguration: configurationChanged.event,
+      createFileSystemWatcher(pattern) {
+        const created = new EventEmitter();
+        const changed = new EventEmitter();
+        const deleted = new EventEmitter();
+        // Exercise real filesystem changes in the temporary Codex home. The
+        // production extension delegates watcher lifecycle to VS Code.
+        let nativeWatcher;
+        if (options.codexHome) {
+          nativeWatcher = require("node:fs").watch(
+            options.codexHome, { recursive: true }, (event, filename) => {
+              if (!filename) return;
+              const fsPath = path.join(options.codexHome, filename);
+              const relative = path.relative(pattern.base, fsPath);
+              const matches = pattern.pattern === "*"
+                ? relative !== "" && !relative.includes(path.sep) && !relative.startsWith("..")
+                : relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+              if (matches) {
+                const emitter = event === "change" ? changed
+                  : require("node:fs").existsSync(fsPath) ? created : deleted;
+                emitter.fire({ fsPath });
+              }
+            },
+          );
+          nativeWatcher.on("error", () => {});
+        }
+        const watcher = {
+          pattern,
+          disposed: false,
+          onDidCreate: created.event,
+          onDidChange: changed.event,
+          onDidDelete: deleted.event,
+          dispose() {
+            this.disposed = true;
+            nativeWatcher?.close();
+            created.dispose();
+            changed.dispose();
+            deleted.dispose();
+          },
+        };
+        fileWatchers.push(watcher);
+        return watcher;
+      },
       workspaceFolders: options.workspaceFolders ?? [
         {
           name: "codex-extras",
@@ -124,7 +204,14 @@ function createHarness(t, tabs = [], options = {}) {
       },
     },
   };
-  const context = { subscriptions: [] };
+  const storedState = options.storedState ?? new Map();
+  const context = {
+    subscriptions: [],
+    globalState: {
+      get: (key, fallback) => storedState.get(key) ?? fallback,
+      async update(key, value) { storedState.set(key, value); },
+    },
+  };
   const originalCodexHome = process.env.CODEX_HOME;
 
   if (options.codexHome) {
@@ -132,7 +219,7 @@ function createHarness(t, tabs = [], options = {}) {
   }
 
   try {
-    loadExtension(vscode).activate(context);
+    loadExtension(vscode, LiveStatus).activate(context);
   } finally {
     if (originalCodexHome === undefined) {
       delete process.env.CODEX_HOME;
@@ -151,6 +238,15 @@ function createHarness(t, tabs = [], options = {}) {
     calls,
     commandHandlers,
     treeViews,
+    fileWatchers,
+    liveMonitors,
+    storedState,
+    setStatusIcons(value) {
+      showStatusIcons = value;
+      configurationChanged.fire({
+        affectsConfiguration: (key) => key === "codexExtras.showSessionStatusIcons",
+      });
+    },
     runCommand: (command = "codexExtras.newCodexAgent", ...args) =>
       commandHandlers.get(command)(...args),
   };
@@ -344,4 +440,161 @@ test("groups current workspace chats before other workspaces", async (t) => {
   assert.equal(currentChats[0].label, "Current chat");
   assert.equal(otherChats[0].label, "Other chat");
   assert.match(otherChats[0].description, /^other · /);
+});
+
+test("status icons are opt-in, update on live events, and toggle without reloading", async (t) => {
+  const codexHome = await mkdtemp(path.join(os.tmpdir(), "codex-extras-status-ui-"));
+  t.after(() => rm(codexHome, { recursive: true, force: true }));
+  const sessions = path.join(codexHome, "sessions");
+  await mkdir(sessions);
+  const id = "019f9c23-f7ec-72c3-8eb6-0018b17bea4f";
+  const filePath = path.join(sessions, `rollout-${id}.jsonl`);
+  const lifecycle = (type) => JSON.stringify({
+    timestamp: new Date().toISOString(), type: "event_msg", payload: { type, turn_id: "one" },
+  }) + "\n";
+  await writeFile(filePath, '{"type":"session_meta","payload":{"cwd":"/work/current"}}\n' + lifecycle("task_complete"));
+  await writeFile(path.join(codexHome, "session_index.jsonl"), JSON.stringify({ id, thread_name: "Status test" }));
+  const harness = createHarness(t, [], { codexHome, workspaceFolders: [] });
+  const provider = harness.treeViews[0].options.treeDataProvider;
+  let reads = 0;
+  const read = provider.sessionStatusReader.read.bind(provider.sessionStatusReader);
+  provider.sessionStatusReader.read = (...args) => { reads++; return read(...args); };
+  const item = async () => {
+    const groups = await provider.getChildren();
+    return (await provider.getChildren(groups[0]))[0];
+  };
+  assert.equal((await item()).iconPath.id, "comment-discussion");
+  assert.equal((await item()).iconPath.color, undefined);
+  assert.equal(reads, 0, "disabled mode must not read status logs");
+  assert.equal(harness.fileWatchers.length, 0, "no status watchers when disabled");
+  assert.equal(harness.liveMonitors.length, 0, "no IPC connection when disabled");
+  harness.setStatusIcons(true);
+  assert.equal((await item()).iconPath.id, "pass");
+  assert.equal((await item()).iconPath.color.id, "testing.iconPassed");
+  const watcher = harness.fileWatchers.at(-1);
+  assert.equal(watcher.pattern.base, sessions);
+  assert.equal(watcher.pattern.pattern, "**/*.jsonl");
+  let changes = 0;
+  provider.onDidChangeTreeData(() => changes++);
+  const waitForRefresh = async (previous) => {
+    const deadline = Date.now() + 5000;
+    while (changes === previous && Date.now() < deadline) await delay(25);
+    assert.ok(changes > previous, "session log changes should refresh icons");
+  };
+  let previous = changes;
+  await appendFile(filePath, lifecycle("task_started"));
+  await waitForRefresh(previous);
+  assert.equal((await item()).iconPath.id, "clock", "log starts alone must not spin");
+  const live = harness.liveMonitors.at(-1);
+  live.states.set(id, "working");
+  live.onChange();
+  assert.equal((await item()).iconPath.id, "loading~spin");
+  assert.equal((await item()).iconPath.color.id, "charts.blue");
+  assert.match((await item()).accessibilityInformation.label, /Working/);
+  for (const [state, icon, color] of [
+    ["waiting", "bell", "charts.yellow"],
+    ["question", "question", "charts.yellow"],
+  ]) {
+    live.states.set(id, state);
+    const chat = await item();
+    assert.equal(chat.iconPath.id, icon);
+    assert.equal(chat.iconPath.color.id, color);
+  }
+  live.states.set(id, "idle");
+  const idle = await item();
+  assert.equal(idle.iconPath.light, path.resolve(__dirname, "..", "assets", "status-neutral.svg"));
+  assert.match(idle.tooltip, /Idle \(live\)/);
+  live.states.clear();
+  live.onChange();
+  assert.equal((await item()).iconPath.id, "clock", "losing live status removes spinner");
+  assert.equal((await item()).iconPath.color.id, "descriptionForeground");
+  previous = changes;
+  await appendFile(filePath, lifecycle("turn_aborted"));
+  await waitForRefresh(previous);
+  assert.equal((await item()).iconPath.id, "debug-stop");
+  assert.equal((await item()).iconPath.color.id, "charts.orange");
+  await appendFile(filePath, lifecycle("task_failed"));
+  assert.equal((await item()).iconPath.id, "error");
+  assert.equal((await item()).iconPath.color.id, "errorForeground");
+  await writeFile(filePath, "{}\n");
+  const unknown = await item();
+  assert.deepEqual(unknown.iconPath, idle.iconPath, "inactive states preserve the same neutral dot");
+  assert.match(unknown.tooltip, /Status unknown/);
+  harness.setStatusIcons(false);
+  assert.ok(watcher.disposed);
+  assert.ok(live.disposed);
+  const previousReads = reads;
+  assert.equal((await item()).iconPath.id, "comment-discussion");
+  assert.equal(reads, previousReads);
+  assert.equal(provider.sessionStatusReader.cache.size, 0);
+});
+
+async function resultFixture(t) {
+  const codexHome = await mkdtemp(path.join(os.tmpdir(), "codex-extras-reviewed-"));
+  t.after(() => rm(codexHome, { recursive: true, force: true }));
+  const id = "019f9c23-f7ec-72c3-8eb6-0018b17bea4f";
+  await mkdir(path.join(codexHome, "sessions"));
+  const filePath = path.join(codexHome, "sessions", `rollout-${id}.jsonl`);
+  const lifecycle = (type, turnId) => JSON.stringify({
+    type: "event_msg", payload: { type, turn_id: turnId },
+  }) + "\n";
+  await writeFile(filePath, lifecycle("task_complete", "turn-one"));
+  await writeFile(path.join(codexHome, "session_index.jsonl"), JSON.stringify({ id, thread_name: "Review test" }));
+  const options = { codexHome, workspaceFolders: [], showSessionStatusIcons: true };
+  const item = async (harness) => {
+    const provider = harness.treeViews[0].options.treeDataProvider;
+    const groups = await provider.getChildren();
+    return (await provider.getChildren(groups[0]))[0];
+  };
+  return { id, filePath, lifecycle, options, item };
+}
+
+test("opening a green result hides its icon across reloads; a new result turns green again", async (t) => {
+  const { id, filePath, lifecycle, options, item } = await resultFixture(t);
+  const harness = createHarness(t, [], options);
+  assert.equal((await item(harness)).iconPath.id, "pass");
+  await harness.runCommand("codexExtras.openChat", id);
+  assert.equal((await item(harness)).iconPath.light, path.resolve(__dirname, "..", "assets", "status-neutral.svg"));
+  assert.match((await item(harness)).tooltip, /Result reviewed/);
+  const reloaded = createHarness(t, [], { ...options, storedState: harness.storedState });
+  assert.equal((await item(reloaded)).iconPath.light, path.resolve(__dirname, "..", "assets", "status-neutral.svg"));
+  await appendFile(filePath, lifecycle("task_started", "turn-two"));
+  assert.equal((await item(reloaded)).iconPath.id, "clock");
+  await appendFile(filePath, lifecycle("task_complete", "turn-two"));
+  assert.equal((await item(reloaded)).iconPath.id, "pass");
+  await reloaded.runCommand("codexExtras.openChat", { id });
+  assert.equal((await item(reloaded)).iconPath.dark, path.resolve(__dirname, "..", "assets", "status-neutral.svg"));
+});
+
+test("a failed open or missing editor tab cannot consume a result", async (t) => {
+  const { id, options, item } = await resultFixture(t);
+  const harness = createHarness(t, [], { ...options, failOpen: true });
+  assert.equal((await item(harness)).iconPath.id, "pass");
+  await assert.rejects(harness.runCommand("codexExtras.openChat", id), /opening failure/);
+  assert.equal((await item(harness)).iconPath.id, "pass");
+  assert.equal(harness.storedState.size, 0);
+  const noTab = createHarness(t, [], { ...options, skipTabCreation: true });
+  await item(noTab);
+  await noTab.runCommand("codexExtras.openChat", id);
+  assert.equal((await item(noTab)).iconPath.id, "pass");
+});
+
+test("opening an old result never consumes a newer turn that finishes during opening", async (t) => {
+  const { id, filePath, lifecycle, options, item } = await resultFixture(t);
+  const harness = createHarness(t, [], { ...options, async beforeOpen() {
+    await appendFile(filePath, lifecycle("task_started", "turn-two") + lifecycle("task_complete", "turn-two"));
+  } });
+  await item(harness);
+  await harness.runCommand("codexExtras.openChat", id);
+  assert.equal((await item(harness)).iconPath.id, "pass");
+});
+
+test("a stale tree item consumes only the result that item displayed", async (t) => {
+  const { filePath, lifecycle, options, item } = await resultFixture(t);
+  const harness = createHarness(t, [], options);
+  const oldItem = await item(harness);
+  await appendFile(filePath, lifecycle("task_complete", "turn-two"));
+  await item(harness);
+  await harness.runCommand(oldItem.command.command, ...oldItem.command.arguments);
+  assert.equal((await item(harness)).iconPath.id, "pass");
 });

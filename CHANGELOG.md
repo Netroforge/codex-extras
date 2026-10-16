@@ -2,6 +2,18 @@
 
 All notable changes to Codex Extras are documented in this file.
 
+## Unreleased
+
+- Add experimental, opt-in session status icons. Use local Codex IPC for live
+  work and input/approval waits, and bounded log reads for recorded results.
+  Keep the original chat icons and metadata-only reads by default.
+- Show unanswered non-blocking questions, resolve replies independently, and
+  discard superseded or abandoned questions, including migrated histories.
+- Mark new results in green until opened successfully through Codex Extras;
+  persist review state and protect newer results from stale clicks.
+- Use theme-aware status colors and a small gray dot for reviewed, idle, and
+  unknown states, preserving label alignment. Document protocol limitations.
+
 ## 1.1.0
 
 - Add a Codex Chats Activity Bar panel with local chat history, automatic
