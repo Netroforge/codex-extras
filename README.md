@@ -24,8 +24,9 @@ conversations ordered by their most recent activity.
 
 The panel reads Codex's local session index from `$CODEX_HOME/session_index.jsonl`
 when `CODEX_HOME` is set, or from `~/.codex/session_index.jsonl` otherwise.
-It reads only the small metadata prefix needed to identify each chat's workspace;
-transcript contents are not parsed or copied.
+By default, it reads only the small metadata prefix needed to identify each
+chat's workspace; transcript contents are not parsed or copied. The optional
+status-icons mode also reads lifecycle events from a bounded log tail (see Settings).
 
 ### New Codex Agent toolbar button
 
@@ -47,6 +48,29 @@ The official Codex extension is declared as a dependency and is installed automa
 | Setting | Default | Description |
 | --- | --- | --- |
 | `codexExtras.showNewAgentButton` | `true` | Shows the New Codex Agent button in the editor toolbar. |
+| `codexExtras.showSessionStatusIcons` | `false` | Experimental: replaces conversation icons with live task status and recorded completion events. |
+
+Enable **Codex Extras: Show Session Status Icons** for a spinner while working,
+a check mark after completion, a stop icon for interrupted turns, or an error icon
+for failed turns. A question mark means no supported lifecycle event was found.
+A bell means Codex is waiting for input or approval, and a hollow circle means idle.
+A clock means activity is unconfirmed, not that the task has completed.
+Changing the setting takes effect immediately.
+
+This optional mode reads at most the last 256 KiB of each local session log and
+caches the result. Only explicit lifecycle events determine status; assistant
+messages and file modification times do not imply completion. File system events
+refresh recorded results without polling. A spinner requires a live `active`
+state from Codex's internal local IPC channel; logs alone never produce a spinner.
+Losing the connection or receiving an owner-disconnection event invalidates live
+status immediately. There is no inactivity timeout for a confirmed running task.
+
+The IPC adapter is experimental and was checked against Codex extension
+`26.1007.21434` (stream protocol version 11). An incompatible protocol falls back
+to unknown/unconfirmed status. This is an observer only: it does not start,
+resume, interrupt, or take ownership of tasks. See [status implementation notes](docs/SESSION-STATUS.md).
+When disabled, session bodies are not read, no status watcher is registered,
+and no IPC connection is opened.
 
 ## Install
 
@@ -68,7 +92,10 @@ code --install-extension codex-extras-1.1.0.vsix
 
 Codex Extras contains no telemetry or network requests. It reads the local Codex
 session index to populate the chat list and opens editor panels provided by the
-official Codex extension.
+official Codex extension. If status icons are enabled, it also reads a bounded
+tail of session logs locally to identify lifecycle events and receives local IPC
+state snapshots. Only runtime status is retained from snapshots; conversation
+messages are discarded and are never displayed, saved, or sent elsewhere.
 
 ## Contributing
 

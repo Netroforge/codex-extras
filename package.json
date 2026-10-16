@@ -110,6 +110,11 @@
     "configuration": {
       "title": "Codex Extras",
       "properties": {
+        "codexExtras.showSessionStatusIcons": {
+          "type": "boolean",
+          "default": false,
+          "description": "Experimental: replace chat icons with live task status via Codex's internal local IPC protocol, plus recorded completion/interruption events. Show a spinner only when live status confirms activity; otherwise show unknown/unconfirmed. Disabled by default."
+        },
         "codexExtras.showNewAgentButton": {
           "type": "boolean",
           "default": true,

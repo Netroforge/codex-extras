@@ -1,7 +1,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const { mkdtemp, mkdir, rm, writeFile } = require("node:fs/promises");
+const { appendFile, mkdtemp, mkdir, rm, writeFile } = require("node:fs/promises");
 const Module = require("node:module");
 const os = require("node:os");
 const path = require("node:path");
@@ -10,11 +10,14 @@ const test = require("node:test");
 const extensionPath = path.resolve(__dirname, "..", "extension.js");
 const originalLoad = Module._load;
 
-function loadExtension(vscode) {
+function loadExtension(vscode, LiveStatus) {
   delete require.cache[extensionPath];
   Module._load = function load(request, parent, isMain) {
     if (request === "vscode") {
       return vscode;
+    }
+    if (request === "./session-live-status" && LiveStatus) {
+      return { LiveSessionStatus: LiveStatus };
     }
 
     return originalLoad.call(this, request, parent, isMain);
@@ -62,7 +65,25 @@ function createHarness(t, tabs = [], options = {}) {
     }
   }
 
+  const configurationChanged = new EventEmitter();
+  let showStatusIcons = options.showSessionStatusIcons ?? false;
+  const fileWatchers = [];
+  const liveMonitors = [];
+  class LiveStatus {
+    constructor({ onChange }) {
+      this.states = new Map();
+      this.onChange = onChange;
+      liveMonitors.push(this);
+    }
+    setThreads(ids) { this.threads = new Set(ids); }
+    get(id) { return this.states.get(id); }
+    dispose() { this.disposed = true; this.states.clear(); }
+  }
+
   const vscode = {
+    RelativePattern: class RelativePattern {
+      constructor(base, pattern) { this.base = base; this.pattern = pattern; }
+    },
     commands: {
       registerCommand(command, handler) {
         commandHandlers.set(command, handler);
@@ -93,6 +114,53 @@ function createHarness(t, tabs = [], options = {}) {
       Expanded: 2,
     },
     workspace: {
+      getConfiguration(section) {
+        assert.equal(section, "codexExtras");
+        return { get: (key, fallback) => key === "showSessionStatusIcons" ? showStatusIcons : fallback };
+      },
+      onDidChangeConfiguration: configurationChanged.event,
+      createFileSystemWatcher(pattern) {
+        const created = new EventEmitter();
+        const changed = new EventEmitter();
+        const deleted = new EventEmitter();
+        // Exercise real filesystem changes in the temporary Codex home. The
+        // production extension delegates watcher lifecycle to VS Code.
+        let nativeWatcher;
+        if (options.codexHome) {
+          nativeWatcher = require("node:fs").watch(
+            options.codexHome, { recursive: true }, (event, filename) => {
+              if (!filename) return;
+              const fsPath = path.join(options.codexHome, filename);
+              const relative = path.relative(pattern.base, fsPath);
+              const matches = pattern.pattern === "*"
+                ? relative !== "" && !relative.includes(path.sep) && !relative.startsWith("..")
+                : relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+              if (matches) {
+                const emitter = event === "change" ? changed
+                  : require("node:fs").existsSync(fsPath) ? created : deleted;
+                emitter.fire({ fsPath });
+              }
+            },
+          );
+          nativeWatcher.on("error", () => {});
+        }
+        const watcher = {
+          pattern,
+          disposed: false,
+          onDidCreate: created.event,
+          onDidChange: changed.event,
+          onDidDelete: deleted.event,
+          dispose() {
+            this.disposed = true;
+            nativeWatcher?.close();
+            created.dispose();
+            changed.dispose();
+            deleted.dispose();
+          },
+        };
+        fileWatchers.push(watcher);
+        return watcher;
+      },
       workspaceFolders: options.workspaceFolders ?? [
         {
           name: "codex-extras",
@@ -132,7 +200,7 @@ function createHarness(t, tabs = [], options = {}) {
   }
 
   try {
-    loadExtension(vscode).activate(context);
+    loadExtension(vscode, LiveStatus).activate(context);
   } finally {
     if (originalCodexHome === undefined) {
       delete process.env.CODEX_HOME;
@@ -151,6 +219,14 @@ function createHarness(t, tabs = [], options = {}) {
     calls,
     commandHandlers,
     treeViews,
+    fileWatchers,
+    liveMonitors,
+    setStatusIcons(value) {
+      showStatusIcons = value;
+      configurationChanged.fire({
+        affectsConfiguration: (key) => key === "codexExtras.showSessionStatusIcons",
+      });
+    },
     runCommand: (command = "codexExtras.newCodexAgent", ...args) =>
       commandHandlers.get(command)(...args),
   };
@@ -344,4 +420,70 @@ test("groups current workspace chats before other workspaces", async (t) => {
   assert.equal(currentChats[0].label, "Current chat");
   assert.equal(otherChats[0].label, "Other chat");
   assert.match(otherChats[0].description, /^other · /);
+});
+
+test("status icons are opt-in, update on live events, and toggle without reloading", async (t) => {
+  const codexHome = await mkdtemp(path.join(os.tmpdir(), "codex-extras-status-ui-"));
+  t.after(() => rm(codexHome, { recursive: true, force: true }));
+  const sessions = path.join(codexHome, "sessions");
+  await mkdir(sessions);
+  const id = "019f9c23-f7ec-72c3-8eb6-0018b17bea4f";
+  const filePath = path.join(sessions, `rollout-${id}.jsonl`);
+  const lifecycle = (type) => JSON.stringify({
+    timestamp: new Date().toISOString(), type: "event_msg", payload: { type, turn_id: "one" },
+  }) + "\n";
+  await writeFile(filePath, '{"type":"session_meta","payload":{"cwd":"/work/current"}}\n' + lifecycle("task_complete"));
+  await writeFile(path.join(codexHome, "session_index.jsonl"), JSON.stringify({ id, thread_name: "Status test" }));
+  const harness = createHarness(t, [], { codexHome, workspaceFolders: [] });
+  const provider = harness.treeViews[0].options.treeDataProvider;
+  let reads = 0;
+  const read = provider.sessionStatusReader.read.bind(provider.sessionStatusReader);
+  provider.sessionStatusReader.read = (...args) => { reads++; return read(...args); };
+  const item = async () => {
+    const groups = await provider.getChildren();
+    return (await provider.getChildren(groups[0]))[0];
+  };
+  assert.equal((await item()).iconPath.id, "comment-discussion");
+  assert.equal(reads, 0, "disabled mode must not read status logs");
+  assert.equal(harness.fileWatchers.length, 2, "only archive watchers when disabled");
+  assert.equal(harness.liveMonitors.length, 0, "no IPC connection when disabled");
+  harness.setStatusIcons(true);
+  assert.equal((await item()).iconPath.id, "pass");
+  const watcher = harness.fileWatchers.at(-1);
+  assert.equal(watcher.pattern.base, sessions);
+  assert.equal(watcher.pattern.pattern, "**/*.jsonl");
+  let changes = 0;
+  provider.onDidChangeTreeData(() => changes++);
+  const waitForRefresh = async (previous) => {
+    const deadline = Date.now() + 5000;
+    while (changes === previous && Date.now() < deadline) await delay(25);
+    assert.ok(changes > previous, "session log changes should refresh icons");
+  };
+  let previous = changes;
+  await appendFile(filePath, lifecycle("task_started"));
+  await waitForRefresh(previous);
+  assert.equal((await item()).iconPath.id, "clock", "log starts alone must not spin");
+  const live = harness.liveMonitors.at(-1);
+  live.states.set(id, "working");
+  live.onChange();
+  assert.equal((await item()).iconPath.id, "loading~spin");
+  assert.match((await item()).accessibilityInformation.label, /Working/);
+  live.states.clear();
+  live.onChange();
+  assert.equal((await item()).iconPath.id, "clock", "losing live status removes spinner");
+  previous = changes;
+  await appendFile(filePath, lifecycle("turn_aborted"));
+  await waitForRefresh(previous);
+  assert.equal((await item()).iconPath.id, "debug-stop");
+  await appendFile(filePath, lifecycle("task_failed"));
+  assert.equal((await item()).iconPath.id, "error");
+  await writeFile(filePath, "{}\n");
+  assert.equal((await item()).iconPath.id, "question");
+  harness.setStatusIcons(false);
+  assert.ok(watcher.disposed);
+  assert.ok(live.disposed);
+  const previousReads = reads;
+  assert.equal((await item()).iconPath.id, "comment-discussion");
+  assert.equal(reads, previousReads);
+  assert.equal(provider.sessionStatusReader.cache.size, 0);
 });

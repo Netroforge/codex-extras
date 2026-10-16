@@ -16,6 +16,11 @@ assert.equal(manifest.license, "MIT");
 assert.equal(manifest.repository.url, "https://github.com/netroforge/codex-extras.git");
 assert.ok(manifest.extensionDependencies.includes("openai.chatgpt"));
 assert.equal(manifest.main, "./extension.js");
+assert.equal(
+  manifest.contributes.configuration.properties["codexExtras.showSessionStatusIcons"].default,
+  false,
+  "Status icons must remain opt-in",
+);
 assert.ok(
   manifest.activationEvents.includes("onCommand:codexExtras.newCodexAgent"),
 );

@@ -2,6 +2,13 @@
 
 All notable changes to Codex Extras are documented in this file.
 
+## Unreleased
+
+- Add opt-in session status icons, using experimental local Codex IPC for live
+  activity and bounded log reads for recorded results. Never infer running from
+  unfinished logs; invalidate live activity on disconnection. Keep the original
+  conversation icons by default.
+
 ## 1.1.0
 
 - Add a Codex Chats Activity Bar panel with local chat history, automatic
