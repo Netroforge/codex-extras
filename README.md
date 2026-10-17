@@ -44,6 +44,13 @@ The official Codex extension is declared as a dependency and is installed automa
 
 ## Settings
 
+The chat list follows the active conversation editor without moving keyboard
+focus. New Codex panels keep a generic route until opened as a specific
+conversation; Extras clears stale selection rather than guessing which chat is
+inside them. If a new tab still says **Codex**, open its named entry in the list
+to use a conversation-specific tab. Tab titles are owned by the official Codex
+extension and cannot be renamed by Extras through the VS Code API.
+
 | Setting | Default | Description |
 | --- | --- | --- |
 | `codexExtras.showNewAgentButton` | `true` | Shows the New Codex Agent button in the editor toolbar. |
