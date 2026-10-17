@@ -2,6 +2,13 @@
 
 All notable changes to Codex Extras are documented in this file.
 
+## Unreleased
+
+- Add opt-in latest-result sorting within workspace groups. Only completed
+  results change recency; opening, focusing, or reading a chat cannot move it.
+  Remember observed completion times across reloads; keep index-date sorting
+  as the default.
+
 ## 1.1.0
 
 - Add a Codex Chats Activity Bar panel with local chat history, automatic

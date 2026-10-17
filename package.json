@@ -114,6 +114,19 @@
           "type": "boolean",
           "default": true,
           "description": "Show the New Codex Agent button in the editor toolbar."
+        },
+        "codexExtras.chatSortOrder": {
+          "type": "string",
+          "enum": [
+            "recent",
+            "latestResult"
+          ],
+          "enumDescriptions": [
+            "Newest session-index update first.",
+            "Most recently delivered result first. Opening, focus, read state, and live activity do not change the order."
+          ],
+          "default": "recent",
+          "description": "Sort chats within each workspace group. Latest result uses bounded log reads and locally remembered completion times, independently of status icons."
         }
       }
     },

@@ -46,7 +46,22 @@ The official Codex extension is declared as a dependency and is installed automa
 
 | Setting | Default | Description |
 | --- | --- | --- |
+| `codexExtras.chatSortOrder` | `recent` | `recent`: session-index date; `latestResult`: most recently delivered result first, within each workspace group. |
 | `codexExtras.showNewAgentButton` | `true` | Shows the New Codex Agent button in the editor toolbar. |
+
+Set **Codex Extras: Chat Sort Order** to **latestResult** to order each workspace
+by the time its sessions last delivered a completed result. Opening a chat,
+changing focus, reading a result, starting work, questions, and streamed tokens
+do not change the order. A new completed result moves that chat up within its
+workspace group. Remembered completion times survive reloads. Chats with no known
+result time appear below dated results in a stable order. Switching back to
+**recent** restores the original index-date ordering immediately.
+This option reads bounded log tails, without changing conversation icons; it does not
+require a live IPC connection.
+Only explicit `task_complete` records with valid timestamps count. Reads are
+cached and limited to the last 256 KiB per log. An older completion outside that
+tail can be unknown on first use; once observed, its time is remembered locally.
+No transcripts are modified. File events refresh results without status polling.
 
 ## Install
 
