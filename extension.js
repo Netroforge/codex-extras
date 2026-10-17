@@ -28,10 +28,11 @@ let panelSequence = 0;
 let openQueue = Promise.resolve();
 
 class CodexChatItem extends vscode.TreeItem {
-  constructor(session) {
+  constructor(session, selectionRevision = 0) {
     super(session.title, vscode.TreeItemCollapsibleState.None);
 
-    this.id = session.id;
+    this.sessionId = session.id;
+    this.id = `${session.id}:${selectionRevision}`;
     this.description = [session.workspaceName, formatUpdatedAt(session.updatedAt)]
       .filter(Boolean)
       .join(" · ");
@@ -82,6 +83,8 @@ class CodexChatHistoryProvider {
     this.sessionsDirectory = sessionsDirectory;
     this.getWorkspaceFolders = getWorkspaceFolders;
     this.workspaceBySessionId = new Map();
+    this.selectionRevision = 0;
+    this.groups = [];
     this.changeEmitter = new vscode.EventEmitter();
     this.statusEmitter = new vscode.EventEmitter();
     this.onDidChangeTreeData = this.changeEmitter.event;
@@ -96,9 +99,21 @@ class CodexChatHistoryProvider {
     return item;
   }
 
+  getParent(item) {
+    return item instanceof CodexChatItem
+      ? this.groups.find((group) => group.sessions.some((session) => session.id === item.sessionId))
+      : undefined;
+  }
+
+  findChat(sessionId) {
+    const session = this.groups.flatMap((group) => group.sessions)
+      .find((session) => session.id === sessionId);
+    return session ? new CodexChatItem(session, this.selectionRevision) : undefined;
+  }
+
   async getChildren(item) {
     if (item instanceof CodexChatGroupItem) {
-      return item.sessions.map((session) => new CodexChatItem(session));
+      return item.sessions.map((session) => new CodexChatItem(session, this.selectionRevision));
     }
 
     if (item) {
@@ -126,9 +141,11 @@ class CodexChatHistoryProvider {
         workspacePath: this.workspaceBySessionId.get(session.id),
       }));
 
+      this.groups = createChatGroups(enrichedSessions, workspaceFolders);
       this.statusEmitter.fire(undefined);
-      return createChatGroups(enrichedSessions, workspaceFolders);
+      return this.groups;
     } catch (error) {
+      this.groups = [];
       if (error?.code === "ENOENT") {
         this.statusEmitter.fire(undefined);
         return [];
@@ -294,7 +311,7 @@ function createConversationUri(sessionId) {
 }
 
 function openCodexChat(session) {
-  const sessionId = typeof session === "string" ? session : session?.id;
+  const sessionId = typeof session === "string" ? session : session?.sessionId ?? session?.id;
 
   if (
     typeof sessionId !== "string" ||
@@ -364,8 +381,49 @@ function activate(context) {
     treeDataProvider: historyProvider,
     showCollapseAll: false,
   });
+  let activeTab;
+  let activeRoute;
+  let selectionTimer;
+  let disposed = false;
+  const synchronizeSelection = () => {
+    clearTimeout(selectionTimer);
+    // Run after the provider has returned its children. reveal() waits for any
+    // pending tree refresh, so awaiting it inside getChildren would deadlock.
+    selectionTimer = setTimeout(async () => {
+      if (disposed || !historyView.visible) return;
+      const tab = vscode.window.tabGroups.activeTabGroup?.activeTab;
+      const uri = tab?.input?.uri;
+      if (uri?.scheme !== CODEX_NEW_PANEL_SCHEME || uri.authority !== CODEX_ROUTE_AUTHORITY) return;
+      const match = /^\/local\/([a-zA-Z0-9_-]+)$/.exec(uri.path);
+      const item = match && historyProvider.findChat(match[1]);
+      if (!item || historyView.selection?.[0]?.id === item.id) return;
+      try {
+        await historyView.reveal(item, { select: true, focus: false, expand: false });
+      } catch {
+        // A tab switch, archive, or refresh may remove the row while revealing.
+      }
+    }, 0);
+  };
+  const activeTabChanged = () => {
+    const tab = vscode.window.tabGroups.activeTabGroup?.activeTab;
+    const uri = tab?.input?.uri;
+    const route = uri ? JSON.stringify([uri.scheme, uri.authority, uri.path, uri.query]) : undefined;
+    if (tab !== activeTab || route !== activeRoute) {
+      activeTab = tab;
+      activeRoute = route;
+      // TreeView has no public clearSelection. Replace leaf identities on an
+      // editor switch so an unresolved new panel cannot retain an old chat's
+      // selection. Group identities and collapse state remain stable.
+      historyProvider.selectionRevision++;
+      historyProvider.refresh();
+    }
+    synchronizeSelection();
+  };
+  const tabSubscription = vscode.window.tabGroups.onDidChangeTabs(activeTabChanged);
+  const tabGroupSubscription = vscode.window.tabGroups.onDidChangeTabGroups(activeTabChanged);
   const statusSubscription = historyProvider.onDidChangeStatus((message) => {
     historyView.message = message;
+    synchronizeSelection();
   });
   const visibilitySubscription = historyView.onDidChangeVisibility(
     ({ visible }) => {
@@ -377,6 +435,7 @@ function activate(context) {
   const workspaceSubscription = vscode.workspace.onDidChangeWorkspaceFolders(
     () => historyProvider.refresh(),
   );
+  activeTabChanged();
 
   context.subscriptions.push(
     vscode.commands.registerCommand(COMMAND_ID, openNewChat),
@@ -390,6 +449,12 @@ function activate(context) {
     statusSubscription,
     visibilitySubscription,
     workspaceSubscription,
+    tabSubscription,
+    tabGroupSubscription,
+    { dispose() {
+      disposed = true;
+      clearTimeout(selectionTimer);
+    } },
     watchSessionIndex(sessionIndexPath, () => historyProvider.refresh()),
   );
 }

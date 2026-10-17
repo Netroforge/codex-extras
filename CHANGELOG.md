@@ -2,6 +2,12 @@
 
 All notable changes to Codex Extras are documented in this file.
 
+## Unreleased
+
+- Synchronize chat selection with the active conversation tab across editor
+  groups without stealing focus. Clear stale selections for unresolved new
+  panels; document the official Codex extension's generic new-tab title limit.
+
 ## 1.1.0
 
 - Add a Codex Chats Activity Bar panel with local chat history, automatic

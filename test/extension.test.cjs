@@ -6,6 +6,7 @@ const Module = require("node:module");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
+const { setTimeout: delay } = require("node:timers/promises");
 
 const extensionPath = path.resolve(__dirname, "..", "extension.js");
 const originalLoad = Module._load;
@@ -62,6 +63,9 @@ function createHarness(t, tabs = [], options = {}) {
     }
   }
 
+  const tabsChanged = new EventEmitter();
+  const tabGroupsChanged = new EventEmitter();
+  const tabGroup = { tabs, activeTab: options.activeTab };
   const vscode = {
     commands: {
       registerCommand(command, handler) {
@@ -108,12 +112,22 @@ function createHarness(t, tabs = [], options = {}) {
     window: {
       activeTextEditor: undefined,
       tabGroups: {
-        all: [{ tabs }],
+        all: [tabGroup],
+        activeTabGroup: tabGroup,
+        onDidChangeTabs: tabsChanged.event,
+        onDidChangeTabGroups: tabGroupsChanged.event,
       },
       createTreeView(id, options) {
         const view = {
           id,
           options,
+          visible: true,
+          selection: [],
+          reveals: [],
+          async reveal(item, revealOptions) {
+            this.reveals.push({ item, options: revealOptions });
+            if (revealOptions.select) this.selection = [item];
+          },
           dispose() {},
           onDidChangeVisibility() {
             return disposable;
@@ -151,6 +165,10 @@ function createHarness(t, tabs = [], options = {}) {
     calls,
     commandHandlers,
     treeViews,
+    setActiveTab(tab, groupEvent = false) {
+      tabGroup.activeTab = tab;
+      (groupEvent ? tabGroupsChanged : tabsChanged).fire({});
+    },
     runCommand: (command = "codexExtras.newCodexAgent", ...args) =>
       commandHandlers.get(command)(...args),
   };
@@ -221,6 +239,67 @@ test("does not treat an existing conversation as an empty panel", async (t) => {
   await harness.runCommand();
 
   assert.deepEqual(harness.calls, [["chatgpt.newCodexPanel"]]);
+});
+
+test("tracks the active conversation across tab groups without moving editor focus", async (t) => {
+  const codexHome = await mkdtemp(path.join(os.tmpdir(), "codex-extras-active-"));
+  t.after(() => rm(codexHome, { recursive: true, force: true }));
+  const index = path.join(codexHome, "session_index.jsonl");
+  await writeFile(index, ["first", "second"].map((id) => JSON.stringify({ id, thread_name: id })).join("\n"));
+  const conversationTab = (id) => ({ input: { uri: {
+    scheme: "openai-codex", authority: "route", path: `/local/${id}`,
+  } } });
+  const first = conversationTab("first");
+  const harness = createHarness(t, [first], { codexHome, workspaceFolders: [], activeTab: first });
+  const view = harness.treeViews[0];
+  const provider = view.options.treeDataProvider;
+  await provider.getChildren();
+  await delay(25);
+  assert.equal(view.selection[0].sessionId, "first");
+  assert.equal(provider.getParent(view.selection[0]).id, "all-chats");
+  assert.deepEqual(view.reveals.at(-1).options, { select: true, focus: false, expand: false });
+  await harness.runCommand("codexExtras.openChat", view.selection[0]);
+  assert.equal(harness.calls.at(-1)[1].path, "/local/first", "inline actions use the session ID, not the tree identity");
+  harness.calls.length = 0;
+  const rootId = provider.groups[0].id;
+  harness.setActiveTab(conversationTab("second"), true);
+  await provider.getChildren();
+  await delay(25);
+  assert.equal(view.selection[0].sessionId, "second");
+  assert.equal(provider.groups[0].id, rootId, "tab switches preserve group identity");
+  const previousSelection = view.selection[0].id;
+  const revealCount = view.reveals.length;
+  harness.setActiveTab(emptyCodexTab());
+  const [group] = await provider.getChildren();
+  const rows = await provider.getChildren(group);
+  await delay(25);
+  assert.ok(rows.every((row) => row.id !== previousSelection), "new panels invalidate stale native selection");
+  assert.equal(view.reveals.length, revealCount, "never guess a new panel's conversation from its title or timestamp");
+  assert.deepEqual(harness.calls, [], "selection sync must not open, close, or rename editors");
+});
+
+test("reconciles a known active tab after its session appears or title changes in the index", async (t) => {
+  const codexHome = await mkdtemp(path.join(os.tmpdir(), "codex-extras-active-index-"));
+  t.after(() => rm(codexHome, { recursive: true, force: true }));
+  const index = path.join(codexHome, "session_index.jsonl");
+  await writeFile(index, "");
+  const activeTab = { input: { uri: { scheme: "openai-codex", authority: "route", path: "/local/new-session" } } };
+  const harness = createHarness(t, [activeTab], { codexHome, workspaceFolders: [], activeTab });
+  const view = harness.treeViews[0];
+  const provider = view.options.treeDataProvider;
+  await provider.getChildren();
+  await delay(25);
+  assert.equal(view.reveals.length, 0);
+  await writeFile(index, JSON.stringify({ id: "new-session", thread_name: "Generated title" }));
+  await provider.getChildren();
+  await delay(25);
+  assert.equal(view.selection[0].label, "Generated title");
+  const selectionId = view.selection[0].id;
+  provider.refresh();
+  await provider.getChildren();
+  await delay(25);
+  assert.equal(view.selection[0].id, selectionId, "status refreshes keep leaf identity stable");
+  assert.equal(view.reveals.length, 1, "status refreshes must not repeatedly scroll the list");
 });
 
 test("registers the Codex chat history tree view", (t) => {
