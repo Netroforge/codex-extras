@@ -4,10 +4,13 @@ const fs = require("node:fs");
 const { readFile } = require("node:fs/promises");
 const path = require("node:path");
 const vscode = require("vscode");
+const { SessionResultReader, watchSessionResults } = require("./session-results");
+const { sortSessions } = require("./session-sort");
 const {
   getSessionIndexPath,
   getSessionsDirectory,
   isPathInsideWorkspace,
+  loadSessionFiles,
   loadSessionWorkspaces,
   parseSessionIndex,
 } = require("./session-index");
@@ -23,6 +26,7 @@ const CODEX_EDITOR_VIEW_TYPE = "chatgpt.conversationEditor";
 const CODEX_NEW_PANEL_SCHEME = "openai-codex";
 const CODEX_ROUTE_AUTHORITY = "route";
 const CODEX_NEW_PANEL_PATH = "/extension/panel/new";
+const RESULT_TIMES_KEY = "codexExtras.lastResultTimes";
 
 let panelSequence = 0;
 let openQueue = Promise.resolve();
@@ -77,10 +81,14 @@ class CodexChatGroupItem extends vscode.TreeItem {
 }
 
 class CodexChatHistoryProvider {
-  constructor(sessionIndexPath, sessionsDirectory, getWorkspaceFolders) {
+  constructor(sessionIndexPath, sessionsDirectory, getWorkspaceFolders, getResultTimes, saveResultTimes) {
     this.sessionIndexPath = sessionIndexPath;
     this.sessionsDirectory = sessionsDirectory;
     this.getWorkspaceFolders = getWorkspaceFolders;
+    this.getResultTimes = getResultTimes;
+    this.saveResultTimes = saveResultTimes;
+    this.sortOrder = "recent";
+    this.resultReader = new SessionResultReader();
     this.workspaceBySessionId = new Map();
     this.changeEmitter = new vscode.EventEmitter();
     this.statusEmitter = new vscode.EventEmitter();
@@ -111,9 +119,12 @@ class CodexChatHistoryProvider {
       const missingWorkspaceIds = sessions
         .filter((session) => !this.workspaceBySessionId.has(session.id))
         .map((session) => session.id);
+      const files = this.sortOrder === "latestResult"
+        ? await loadSessionFiles(this.sessionsDirectory, sessions.map(({ id }) => id)) : undefined;
       const loadedWorkspaces = await loadSessionWorkspaces(
         this.sessionsDirectory,
         missingWorkspaceIds,
+        files,
       );
 
       for (const [sessionId, workspacePath] of loadedWorkspaces) {
@@ -121,13 +132,20 @@ class CodexChatHistoryProvider {
       }
 
       const workspaceFolders = this.getWorkspaceFolders();
-      const enrichedSessions = sessions.map((session) => ({
+      const enrichedSessions = await Promise.all(sessions.map(async (session) => ({
         ...session,
         workspacePath: this.workspaceBySessionId.get(session.id),
-      }));
+        completedAt: files ? Math.max(this.getResultTimes()[session.id] ?? 0,
+          files.has(session.id) ? await this.resultReader.read(files.get(session.id)) : 0) : 0,
+      })));
+      if (files) {
+        this.resultReader.retain(files.values());
+        await this.saveResultTimes(Object.fromEntries(enrichedSessions
+          .filter((session) => session.completedAt > 0).map((session) => [session.id, session.completedAt])));
+      }
 
       this.statusEmitter.fire(undefined);
-      return createChatGroups(enrichedSessions, workspaceFolders);
+      return createChatGroups(sortSessions(enrichedSessions, this.sortOrder), workspaceFolders);
     } catch (error) {
       if (error?.code === "ENOENT") {
         this.statusEmitter.fire(undefined);
@@ -140,6 +158,7 @@ class CodexChatHistoryProvider {
   }
 
   dispose() {
+    this.resultReader.clear();
     this.changeEmitter.dispose();
     this.statusEmitter.dispose();
   }
@@ -350,6 +369,8 @@ function watchSessionIndex(sessionIndexPath, onChange) {
  * @param {import("vscode").ExtensionContext} context
  */
 function activate(context) {
+  let resultTimes = context.globalState.get(RESULT_TIMES_KEY, {});
+  let resultTimesQueue = Promise.resolve();
   const openNewChat = () => {
     openQueue = openQueue.catch(() => undefined).then(openNewCodexAgent);
     return openQueue;
@@ -359,6 +380,24 @@ function activate(context) {
     sessionIndexPath,
     getSessionsDirectory(),
     () => vscode.workspace.workspaceFolders ?? [],
+    () => resultTimes,
+    (times) => {
+      resultTimesQueue = resultTimesQueue.catch(() => {}).then(async () => {
+        const next = { ...resultTimes };
+        let changed = false;
+        for (const [id, time] of Object.entries(times)) {
+          if (Number.isFinite(time) && time > (next[id] ?? 0)) {
+            next[id] = time;
+            changed = true;
+          }
+        }
+        if (changed) {
+          await context.globalState.update(RESULT_TIMES_KEY, next);
+          resultTimes = next;
+        }
+      });
+      return resultTimesQueue;
+    },
   );
   const historyView = vscode.window.createTreeView(CHAT_HISTORY_VIEW_ID, {
     treeDataProvider: historyProvider,
@@ -377,6 +416,23 @@ function activate(context) {
   const workspaceSubscription = vscode.workspace.onDidChangeWorkspaceFolders(
     () => historyProvider.refresh(),
   );
+  let resultWatcher;
+  const updateSortOrder = () => {
+    const order = vscode.workspace.getConfiguration("codexExtras").get("chatSortOrder", "recent");
+    historyProvider.sortOrder = order === "latestResult" ? order : "recent";
+    if (historyProvider.sortOrder === "latestResult" && !resultWatcher) {
+      resultWatcher = watchSessionResults(historyProvider.sessionsDirectory, () => historyProvider.refresh(), vscode);
+    } else if (historyProvider.sortOrder === "recent") {
+      resultWatcher?.dispose();
+      resultWatcher = undefined;
+      historyProvider.resultReader.clear();
+    }
+    historyProvider.refresh();
+  };
+  const configurationSubscription = vscode.workspace.onDidChangeConfiguration((event) => {
+    if (event.affectsConfiguration("codexExtras.chatSortOrder")) updateSortOrder();
+  });
+  updateSortOrder();
 
   context.subscriptions.push(
     vscode.commands.registerCommand(COMMAND_ID, openNewChat),
@@ -390,6 +446,8 @@ function activate(context) {
     statusSubscription,
     visibilitySubscription,
     workspaceSubscription,
+    configurationSubscription,
+    { dispose() { resultWatcher?.dispose(); } },
     watchSessionIndex(sessionIndexPath, () => historyProvider.refresh()),
   );
 }

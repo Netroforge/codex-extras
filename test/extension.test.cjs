@@ -1,7 +1,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const { mkdtemp, mkdir, rm, writeFile } = require("node:fs/promises");
+const { appendFile, mkdtemp, mkdir, rm, writeFile } = require("node:fs/promises");
 const Module = require("node:module");
 const os = require("node:os");
 const path = require("node:path");
@@ -62,7 +62,12 @@ function createHarness(t, tabs = [], options = {}) {
     }
   }
 
+  const configurationChanged = new EventEmitter();
+  let sortOrder = options.chatSortOrder ?? "recent";
+  const fileWatchers = [];
+
   const vscode = {
+    RelativePattern: class { constructor(base, pattern) { this.base = base; this.pattern = pattern; } },
     commands: {
       registerCommand(command, handler) {
         commandHandlers.set(command, handler);
@@ -93,6 +98,17 @@ function createHarness(t, tabs = [], options = {}) {
       Expanded: 2,
     },
     workspace: {
+      getConfiguration() { return { get: (key, fallback) => key === "chatSortOrder" ? sortOrder : fallback }; },
+      onDidChangeConfiguration: configurationChanged.event,
+      createFileSystemWatcher(pattern) {
+        const created = new EventEmitter(), changed = new EventEmitter(), deleted = new EventEmitter();
+        const watcher = { pattern, created, changed, deleted, disposed: false,
+          onDidCreate: created.event, onDidChange: changed.event, onDidDelete: deleted.event,
+          dispose() { this.disposed = true; created.dispose(); changed.dispose(); deleted.dispose(); },
+        };
+        fileWatchers.push(watcher);
+        return watcher;
+      },
       workspaceFolders: options.workspaceFolders ?? [
         {
           name: "codex-extras",
@@ -124,7 +140,11 @@ function createHarness(t, tabs = [], options = {}) {
       },
     },
   };
-  const context = { subscriptions: [] };
+  const storedState = options.storedState ?? new Map();
+  const context = { subscriptions: [], globalState: {
+    get: (key, fallback) => storedState.get(key) ?? fallback,
+    async update(key, value) { storedState.set(key, value); },
+  } };
   const originalCodexHome = process.env.CODEX_HOME;
 
   if (options.codexHome) {
@@ -151,6 +171,12 @@ function createHarness(t, tabs = [], options = {}) {
     calls,
     commandHandlers,
     treeViews,
+    fileWatchers,
+    storedState,
+    setSortOrder(value) {
+      sortOrder = value;
+      configurationChanged.fire({ affectsConfiguration: (key) => key === "codexExtras.chatSortOrder" });
+    },
     runCommand: (command = "codexExtras.newCodexAgent", ...args) =>
       commandHandlers.get(command)(...args),
   };
@@ -235,6 +261,45 @@ test("registers the Codex chat history tree view", (t) => {
   assert.ok(harness.commandHandlers.has("codexExtras.newChat"));
   assert.ok(harness.commandHandlers.has("codexExtras.openChat"));
   assert.ok(harness.commandHandlers.has("codexExtras.refreshChats"));
+});
+
+test("result sorting preserves workspaces, ignores opens, and remembers delivery times across reloads", async (t) => {
+  const codexHome = await mkdtemp(path.join(os.tmpdir(), "codex-extras-sort-"));
+  t.after(() => rm(codexHome, { recursive: true, force: true }));
+  const sessions = path.join(codexHome, "sessions");
+  await mkdir(sessions);
+  const ids = Array.from({ length: 4 }, (_, index) => `019f9c23-f7ec-72c3-8eb6-0018b17bea4${index}`);
+  const file = (index) => path.join(sessions, `rollout-${ids[index]}.jsonl`);
+  const complete = (timestamp) => JSON.stringify({ type: "event_msg", timestamp, payload: { type: "task_complete" } }) + "\n";
+  for (const [index] of ids.entries()) {
+    await writeFile(file(index), JSON.stringify({ type: "session_meta", payload: { cwd: index < 3 ? "/current" : "/other" } }) + "\n" + complete(`2026-02-0${index + 1}T00:00:00Z`));
+  }
+  await writeFile(path.join(codexHome, "session_index.jsonl"), ids.map((id, index) => JSON.stringify({ id, thread_name: `Chat ${index}`, updated_at: `2026-01-0${4 - index}T00:00:00Z` })).join("\n"));
+  const options = { codexHome, workspaceFolders: [{ name: "current", uri: { fsPath: "/current" } }] };
+  const harness = createHarness(t, [], options), provider = harness.treeViews[0].options.treeDataProvider;
+  assert.equal(harness.fileWatchers.length, 0, "default mode must not watch result logs");
+  harness.setSortOrder("latestResult");
+  let groups = await provider.getChildren();
+  const order = () => groups[0].sessions.map(({ id }) => id);
+  assert.deepEqual(groups.map(({ label }) => label), ["Current Workspace", "Other Workspaces"]);
+  assert.deepEqual(order(), [ids[2], ids[1], ids[0]]);
+  assert.equal(groups[1].sessions[0].id, ids[3], "the newest other-workspace result stays in its own group");
+  await harness.runCommand("codexExtras.openChat", ids[0]);
+  await appendFile(file(0), JSON.stringify({ type: "event_msg", timestamp: "2026-03-01T00:00:00Z", payload: { type: "task_started" } }) + "\n");
+  groups = await provider.getChildren();
+  assert.deepEqual(order(), [ids[2], ids[1], ids[0]], "opens and work starts do not move a row");
+  await appendFile(file(0), complete("2026-03-01T01:00:00Z"));
+  groups = await provider.getChildren();
+  assert.deepEqual(order(), [ids[0], ids[2], ids[1]]);
+  await appendFile(file(0), JSON.stringify({ type: "response_item", text: "x".repeat(300 * 1024) }) + "\n");
+  const reloaded = createHarness(t, [], { ...options, storedState: harness.storedState, chatSortOrder: "latestResult" });
+  assert.equal((await reloaded.treeViews[0].options.treeDataProvider.getChildren())[0].sessions[0].id, ids[0]);
+  const watcher = harness.fileWatchers[0];
+  harness.setSortOrder("recent");
+  groups = await provider.getChildren();
+  assert.deepEqual(order(), ids.slice(0, 3));
+  assert.ok(watcher.disposed);
+  assert.equal(provider.resultReader.cache.size, 0);
 });
 
 test("opens a selected Codex chat as a pinned editor tab", async (t) => {

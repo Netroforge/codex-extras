@@ -16,6 +16,8 @@ assert.equal(manifest.license, "MIT");
 assert.equal(manifest.repository.url, "https://github.com/netroforge/codex-extras.git");
 assert.ok(manifest.extensionDependencies.includes("openai.chatgpt"));
 assert.equal(manifest.main, "./extension.js");
+assert.equal(manifest.contributes.configuration.properties["codexExtras.chatSortOrder"].default, "recent");
+assert.deepEqual(manifest.contributes.configuration.properties["codexExtras.chatSortOrder"].enum, ["recent", "latestResult"]);
 assert.ok(
   manifest.activationEvents.includes("onCommand:codexExtras.newCodexAgent"),
 );

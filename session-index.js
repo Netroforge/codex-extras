@@ -129,16 +129,13 @@ async function findSessionFiles(directory, requestedSessionIds, results) {
         requestedSessionIds.has(sessionId) &&
         !results.has(sessionId)
       ) {
-        const workspacePath = await readSessionWorkspace(entryPath);
-        if (workspacePath) {
-          results.set(sessionId, workspacePath);
-        }
+        results.set(sessionId, entryPath);
       }
     }),
   );
 }
 
-async function loadSessionWorkspaces(sessionsDirectory, sessionIds) {
+async function loadSessionFiles(sessionsDirectory, sessionIds) {
   const requestedSessionIds = new Set(sessionIds);
   const results = new Map();
 
@@ -146,6 +143,18 @@ async function loadSessionWorkspaces(sessionsDirectory, sessionIds) {
     await findSessionFiles(sessionsDirectory, requestedSessionIds, results);
   }
 
+  return results;
+}
+
+async function loadSessionWorkspaces(sessionsDirectory, sessionIds, sessionFiles) {
+  const files = sessionFiles ?? await loadSessionFiles(sessionsDirectory, sessionIds);
+  const results = new Map();
+  await Promise.all(sessionIds.map(async (id) => {
+    const filePath = files.get(id);
+    if (!filePath) return;
+    const workspacePath = await readSessionWorkspace(filePath);
+    if (workspacePath) results.set(id, workspacePath);
+  }));
   return results;
 }
 
@@ -171,6 +180,7 @@ module.exports = {
   getSessionIndexPath,
   getSessionsDirectory,
   isPathInsideWorkspace,
+  loadSessionFiles,
   loadSessionWorkspaces,
   parseSessionIndex,
 };
