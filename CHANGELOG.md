@@ -2,6 +2,12 @@
 
 All notable changes to Codex Extras are documented in this file.
 
+## Unreleased
+
+- Add an optional, version-checked developer repair for repeated onboarding in
+  OpenAI Codex 26.1007.21434, with backup, rollback and regression tests. The
+  repair is excluded from the Extras VSIX and never runs automatically.
+
 ## 1.1.0
 
 - Add a Codex Chats Activity Bar panel with local chat history, automatic

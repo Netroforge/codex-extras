@@ -81,3 +81,11 @@ Codex Extras is an independent, unofficial open-source project. It is not affili
 ## License
 
 [MIT](LICENSE)
+
+## Local onboarding troubleshooting
+
+If the official Codex welcome screen repeatedly appears after completion, see
+[the optional local onboarding repair](docs/local-onboarding-fix.md) for OpenAI
+extension version `26.1007.21434`. This developer script changes the installed
+OpenAI extension only when explicitly run, keeps backups, and supports rollback.
+It is excluded from the Extras VSIX and does not run automatically.
