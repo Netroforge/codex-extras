@@ -29,9 +29,12 @@ Both target files are validated before writes. Original files are saved alongsid
 them with `.codex-extras-nux-backup` appended. The script rejects unsupported
 versions and unexpected code. Reapplying the repair is safe.
 
-Run **Developer: Reload Window** from the VS Code command palette. Then open a
+Wait until all local Codex tasks in the window have finished before running
+**Developer: Reload Window** from the VS Code command palette. Reload restarts
+the official Codex extension and can interrupt its running tasks. Then open a
 new agent through both the Extras toolbar and the Codex Chats plus button,
-including while another empty agent is open. Repeat after another window reload.
+including while another empty agent is open. Repeat after another window reload,
+again waiting for active tasks to finish first.
 The welcome screen should not return and existing conversations should still open.
 
 An OpenAI extension update may replace these files. Do not automatically reapply
@@ -43,7 +46,8 @@ the repair to another version; inspect and test its code first.
 node scripts/local-onboarding-fix.cjs "$env:USERPROFILE/.vscode/extensions/openai.chatgpt-26.1007.21434-win32-x64" --restore
 ```
 
-Reload the VS Code window again. Restore refuses to overwrite files that changed
+Reload the VS Code window again after active tasks have finished.
+Restore refuses to overwrite files that changed
 after the repair.
 
 ## Tests
