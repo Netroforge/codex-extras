@@ -15,6 +15,11 @@ assert.match(manifest.version, /^\d+\.\d+\.\d+$/);
 assert.equal(manifest.license, "MIT");
 assert.equal(manifest.repository.url, "https://github.com/netroforge/codex-extras.git");
 assert.ok(manifest.extensionDependencies.includes("openai.chatgpt"));
+assert.deepEqual(
+  manifest.extensionKind,
+  ["workspace"],
+  "Codex Extras must run alongside Codex in the workspace extension host",
+);
 assert.equal(manifest.main, "./extension.js");
 assert.ok(
   manifest.activationEvents.includes("onCommand:codexExtras.newCodexAgent"),

@@ -40,7 +40,7 @@
   },
   "homepage": "https://github.com/netroforge/codex-extras#readme",
   "extensionKind": [
-    "ui"
+    "workspace"
   ],
   "extensionDependencies": [
     "openai.chatgpt"

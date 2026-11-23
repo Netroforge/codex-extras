@@ -42,6 +42,10 @@ The button is available without assigning a keyboard shortcut.
 
 The official Codex extension is declared as a dependency and is installed automatically when Codex Extras is installed from the Marketplace.
 
+In a VS Code Dev Container, install Codex Extras from the Extensions view in
+the container window. It runs in the container alongside Codex and reads the
+session index there.
+
 ## Settings
 
 | Setting | Default | Description |
