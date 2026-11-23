@@ -2,6 +2,11 @@
 
 All notable changes to Codex Extras are documented in this file.
 
+## Unreleased
+
+- Run Codex Extras alongside Codex in VS Code Dev Containers so chat history
+  and the New Codex Agent button can activate.
+
 ## 1.1.0
 
 - Add a Codex Chats Activity Bar panel with local chat history, automatic
